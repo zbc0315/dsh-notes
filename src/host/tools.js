@@ -11,6 +11,7 @@
  */
 
 const { StoreError, normalizeWorkspacePath } = require('./store')
+const { markdownToBlocks } = require('./markdown-blocks')
 
 /* ------------------------------------------------------------------ *
  * 参数编译（与 dsh-memory 同形）
@@ -90,6 +91,19 @@ function briefPage(page) {
     rev: page.rev,
     size: page.size,
     updatedAt: page.updatedAt,
+  }
+}
+
+/** `notes_read` 的页面视图（契约 §6：id/notebookId/title/rev/updatedAt/markdown/blocks）。 */
+function pageView(page) {
+  return {
+    id: page.id,
+    notebookId: page.notebookId,
+    title: page.title,
+    rev: page.rev,
+    updatedAt: page.updatedAt,
+    markdown: page.markdown,
+    blocks: page.blocks,
   }
 }
 
@@ -177,8 +191,8 @@ function registerTools(ctx, store, options = {}) {
   tools.push(
     tool(
       'notes_read',
-      '按 pageId 或标题读取一篇笔记的完整 Markdown 正文（含 rev / mtimeMs，保存时要用它们做乐观锁）。' +
-        '同时给 notebookId 可以缩小标题查找范围。',
+      '按 pageId 或标题读取一篇笔记：markdown（导出镜像）与 blocks（BlockNote 块数组，真源）都给，' +
+        '并带 rev（保存时用作乐观锁）。同时给 notebookId 可以缩小标题查找范围。',
       {
         pageId: {
           type: 'string',
@@ -196,8 +210,7 @@ function registerTools(ctx, store, options = {}) {
       async (args = {}) => {
         if (args.pageId) {
           const page = await store.readPage(String(args.pageId))
-          const nb = store.tree().notebooks.find((n) => n.id === page.notebookId) || null
-          return { ok: true, page, notebook: nb ? { id: nb.id, title: nb.title } : null }
+          return { ok: true, page: pageView(page) }
         }
         if (!args.title) throw new StoreError(400, '需要提供 pageId 或 title')
 
@@ -216,8 +229,7 @@ function registerTools(ctx, store, options = {}) {
         if (!target) throw new StoreError(404, `没有找到标题匹配「${args.title}」的页面`)
 
         const page = await store.readPage(target.id)
-        const nb = tree.notebooks.find((n) => n.id === page.notebookId) || null
-        return { ok: true, page, notebook: nb ? { id: nb.id, title: nb.title } : null }
+        return { ok: true, page: pageView(page) }
       },
     ),
   )
@@ -281,17 +293,25 @@ function registerTools(ctx, store, options = {}) {
   tools.push(
     tool(
       'notes_create_page',
-      '在指定笔记本里新建一页笔记。markdown 可选（默认空正文）。返回新页面的详情（含 id 与 rev）。',
+      '在指定笔记本里新建一页笔记。正文可以给 markdown（会转成 BlockNote 块）或 blocks（BlockNote 块数组，优先）；' +
+        'Markdown 镜像由块统一生成。返回新页面的详情（含 id 与 rev）。',
       {
         notebookId: { type: 'string', required: true, description: '目标笔记本 id。' },
         title: { type: 'string', required: true, description: '页面标题。' },
-        markdown: { type: 'string', description: '初始 Markdown 正文（可选）。' },
+        markdown: { type: 'string', description: '初始 Markdown 正文（可选，会转成块）。' },
+        blocks: {
+          type: 'array',
+          description: 'BlockNote 块数组（可选，优先于 markdown）。',
+          items: { type: 'object', additionalProperties: true },
+        },
       },
       async (args = {}) => {
+        const hasBlocks = Array.isArray(args.blocks)
         const page = await store.createPage({
           notebookId: args.notebookId,
           title: args.title,
-          markdown: args.markdown,
+          blocks: hasBlocks ? args.blocks : undefined,
+          markdown: hasBlocks ? undefined : args.markdown,
         })
         return { ok: true, page }
       },
@@ -303,11 +323,12 @@ function registerTools(ctx, store, options = {}) {
   tools.push(
     tool(
       'notes_update',
-      '保存笔记（替换整篇正文或只改标题）。建议先 notes_read 拿到 rev 再保存：rev 不匹配会报 409 并返回当前内容。' +
+      '保存笔记（替换整篇正文或只改标题）。markdown 会先转成 BlockNote 块再写入（有损），' +
+        '镜像由块重新生成。建议先 notes_read 拿到 rev 再保存：rev 不匹配会报 409 并返回当前内容。' +
         '不传 rev 时跳过版本检查但仍会检测磁盘外部改动，冲突时返回 conflictFile（旧内容已备份）。',
       {
         pageId: { type: 'string', required: true, description: '页面 id。' },
-        markdown: { type: 'string', description: '新的 Markdown 正文（整篇替换）。' },
+        markdown: { type: 'string', description: '新的 Markdown 正文（整篇替换，会转成块）。' },
         title: { type: 'string', description: '新标题（可只改标题）。' },
         rev: { type: 'number', description: '上次读取到的版本号，用于乐观锁。' },
       },
@@ -318,12 +339,14 @@ function registerTools(ctx, store, options = {}) {
 
         const saved = await store.savePage({
           id: args.pageId,
-          markdown: hasMarkdown ? args.markdown : undefined,
+          // markdown → blocks（契约 §6：store 不接受外部 markdown 当镜像）
+          blocks: hasMarkdown ? markdownToBlocks(String(args.markdown)) : undefined,
           title: hasTitle ? args.title : undefined,
           rev: args.rev === undefined || args.rev === null ? undefined : Number(args.rev),
         })
         const out = { ok: true, page: saved.page }
         if (saved.conflictFile) out.conflictFile = saved.conflictFile
+        if (hasMarkdown) out.lossy = true
         return out
       },
     ),
@@ -334,14 +357,15 @@ function registerTools(ctx, store, options = {}) {
   tools.push(
     tool(
       'notes_append',
-      '在笔记正文末尾追加一段 Markdown（自动补一个换行分隔，不会覆盖已有内容）。返回更新后的页面详情。',
+      '在笔记正文末尾追加一段 Markdown（转成块后追加，不会覆盖已有内容；镜像由全部块重新生成，有损）。' +
+        '返回更新后的页面详情。',
       {
         pageId: { type: 'string', required: true, description: '页面 id。' },
         markdown: { type: 'string', required: true, description: '要追加的 Markdown 片段。' },
       },
       async (args = {}) => {
         const page = await store.appendPage({ id: args.pageId, markdown: args.markdown })
-        return { ok: true, page }
+        return { ok: true, page, lossy: true }
       },
     ),
   )

@@ -1,0 +1,99 @@
+/* BlockNote 样式入口：只在这里 @import 上游样式，本插件自己的映射写在下面。
+ * 由 tools/build.mjs 单独打成 client/editor.css（宿主路由 /-/notes/client/editor.css）。 */
+
+@import "@blocknote/mantine/style.css";
+
+/* ------------------------------------------------------------------ *
+ * 把 BlockNote / Mantine 的变量映射到 DSH 令牌，避免出现第二套设计语言。
+ * --dsw-alias-* 会随宿主深浅色自动变，所以这里不需要再写一套暗色。
+ * ------------------------------------------------------------------ */
+
+.bn-container,
+.bn-mantine {
+  --bn-colors-editor-text: var(--dsw-alias-label-primary);
+  --bn-colors-editor-background: transparent;
+  --bn-colors-menu-text: var(--dsw-alias-label-primary);
+  --bn-colors-menu-background: var(--dsw-alias-bg-layer-2);
+  --bn-colors-tooltip-text: var(--dsw-alias-label-primary-foreground);
+  --bn-colors-tooltip-background: var(--dsw-alias-tooltip-bg);
+  --bn-colors-hovered-text: var(--dsw-alias-label-primary);
+  --bn-colors-hovered-background: var(--dsw-alias-interactive-bg-hover);
+  --bn-colors-selected-text: var(--dsw-alias-label-primary);
+  --bn-colors-selected-background: var(--dsw-alias-interactive-bg-active);
+  --bn-colors-disabled-text: var(--dsw-alias-label-tertiary);
+  --bn-colors-disabled-background: var(--dsw-alias-bg-layer-2);
+  --bn-colors-border: var(--dsw-alias-border-l2);
+  --bn-colors-side-menu: var(--dsw-alias-label-tertiary);
+  --bn-font-family: var(--dsw-font-family, system-ui, -apple-system, "Segoe UI", sans-serif);
+  --bn-border-radius-small: var(--dsw-radius-sm, 6px);
+  --bn-border-radius-medium: var(--dsw-radius-md, 8px);
+  --bn-shadow-light: var(--dsw-elevation-soft, 0 1px 2px rgb(0 0 0 / 12%));
+  --bn-shadow-medium: var(--dsw-elevation-panel, 0 6px 20px rgb(0 0 0 / 18%));
+}
+
+/* 编辑区铺满容器，去掉 Mantine 自带的外边距与最小高 */
+.bn-container .bn-editor {
+  padding-inline: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--bn-font-family);
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.bn-container .bn-editor [data-content-type="paragraph"] {
+  padding-block: 2px;
+}
+
+/* 链接用宿主链接色 */
+.bn-container .bn-inline-content a {
+  color: var(--dsw-alias-link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* 行内代码 / 代码块 / 表格边框跟宿主对齐 */
+.bn-container .bn-inline-content code {
+  font-family: var(--dsw-font-markdown-code-font-family, ui-monospace, SFMono-Regular, Menlo, monospace);
+  background: var(--dsw-alias-markdown-inline-code);
+  border-radius: 4px;
+  padding: .12em .35em;
+}
+
+.bn-container .bn-block-content[data-content-type="codeBlock"] {
+  background: var(--dsw-alias-markdown-code-block);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md, 8px);
+}
+
+.bn-container .bn-block-content[data-content-type="table"] td,
+.bn-container .bn-block-content[data-content-type="table"] th {
+  border-color: var(--dsw-alias-border-l2);
+}
+
+.bn-container .bn-block-content[data-content-type="table"] th {
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+/* 引用块 */
+.bn-container .bn-block-content[data-content-type="quote"] {
+  border-left: 3px solid var(--dsw-alias-border-l3);
+  color: var(--dsw-alias-label-secondary);
+  padding-left: .8em;
+}
+
+/* 占位文案 */
+.bn-container .bn-inline-content:has(> .ProseMirror-trailingBreak:only-child)::before,
+.bn-container [data-placeholder]::before {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 侧边块手柄 / 拖拽把手颜色 */
+.bn-container .bn-side-menu button:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* 图片圆角与最大宽度 */
+.bn-container .bn-visual-media {
+  border-radius: var(--dsw-radius-md, 8px);
+}

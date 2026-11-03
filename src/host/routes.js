@@ -11,8 +11,20 @@
  */
 
 const fsp = require('node:fs/promises')
+const fssync = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
 
 const API_PREFIX = '/-/notes'
+
+/** 允许通过 /-/notes/client/<name> 分发的静态产物（白名单，禁止目录穿越）。 */
+const CLIENT_ASSETS = {
+  'editor.js': 'text/javascript; charset=utf-8',
+  'editor.css': 'text/css; charset=utf-8',
+}
+
+/** 包根目录（src/host/routes.js → ../../）。 */
+const PACKAGE_ROOT = path.resolve(__dirname, '..', '..')
 
 /** 允许上传的图片扩展名 → Content-Type。 */
 const ASSET_TYPES = {
@@ -223,8 +235,9 @@ function registerRoutes(ctx, store, options = {}) {
             const result = await store.savePage({
               id,
               title: body.title,
-              // 不传 markdown（undefined）= 只改标题、不动正文；传了才覆盖。
-              markdown: typeof body.markdown === 'string' ? body.markdown : undefined,
+              // 不传 blocks（undefined）= 只改标题、不动正文；传了才覆盖。
+              // Markdown 镜像由 store 从 blocks 生成，客户端不发 markdown。
+              blocks: Array.isArray(body.blocks) ? body.blocks : undefined,
               rev: num(body.rev),
               baseMtimeMs: num(body.baseMtimeMs),
               baseSize: num(body.baseSize),
@@ -238,7 +251,8 @@ function registerRoutes(ctx, store, options = {}) {
             const page = await store.createPage({
               notebookId: body.notebookId,
               title: body.title,
-              markdown: typeof body.markdown === 'string' ? body.markdown : '',
+              blocks: Array.isArray(body.blocks) ? body.blocks : undefined,
+              markdown: typeof body.markdown === 'string' ? body.markdown : undefined,
               order: num(body.order),
             })
             return sendJson(res, 200, { ok: true, page })
@@ -355,6 +369,37 @@ function registerRoutes(ctx, store, options = {}) {
               'Content-Length': String(buf.length),
               // 内容寻址：sha 变了 URL 就变，可以长缓存。
               'Cache-Control': 'private, max-age=31536000, immutable',
+              'X-Content-Type-Options': 'nosniff',
+            })
+            return method === 'HEAD' ? res.end() : res.end(buf)
+          }
+
+          /* ---------- 客户端静态产物（编辑器重包，按需加载） ---------- */
+          if ((method === 'GET' || method === 'HEAD') && rest.startsWith('/client/')) {
+            const name = rest.slice('/client/'.length)
+            const type = CLIENT_ASSETS[name]
+            if (!type) return sendJson(res, 404, { ok: false, error: 'not found' })
+            const abs = path.join(PACKAGE_ROOT, 'client', name)
+            let stat
+            try {
+              stat = fssync.statSync(abs)
+            } catch {
+              return sendJson(res, 404, {
+                ok: false,
+                error: '客户端产物不存在，请先在插件目录跑 npm run build',
+              })
+            }
+            const etag = `"${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}"`
+            if (req.headers['if-none-match'] === etag) {
+              res.writeHead(304, { ETag: etag, 'Cache-Control': 'no-cache' })
+              return res.end()
+            }
+            const buf = await fsp.readFile(abs)
+            res.writeHead(200, {
+              'Content-Type': type,
+              'Content-Length': String(buf.length),
+              ETag: etag,
+              'Cache-Control': 'no-cache',
               'X-Content-Type-Options': 'nosniff',
             })
             return method === 'HEAD' ? res.end() : res.end(buf)

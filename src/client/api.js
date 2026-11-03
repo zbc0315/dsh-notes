@@ -58,24 +58,33 @@ export const api = {
     return body.page
   },
 
-  async savePage({ id, title, markdown, rev, baseMtimeMs, baseSize }) {
+  /**
+   * 保存页面。
+   * `blocks` 省略 = 只改标题，不动正文（Markdown 镜像由 host 从 blocks 生成）。
+   */
+  async savePage({ id, title, blocks, rev, baseMtimeMs, baseSize }) {
+    const body = { title, rev, baseMtimeMs, baseSize }
+    if (Array.isArray(blocks)) body.blocks = blocks
     return readJson(
       await fetch(`${PREFIX}/page${qs({ id })}`, {
         method: 'PUT',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, markdown, rev, baseMtimeMs, baseSize }),
+        body: JSON.stringify(body),
       }),
     )
   },
 
-  async createPage({ notebookId, title, markdown = '' }) {
+  async createPage({ notebookId, title, blocks, markdown }) {
+    const payload = { notebookId, title }
+    if (Array.isArray(blocks)) payload.blocks = blocks
+    if (typeof markdown === 'string') payload.markdown = markdown
     const body = await readJson(
       await fetch(`${PREFIX}/page`, {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notebookId, title, markdown }),
+        body: JSON.stringify(payload),
       }),
     )
     return body.page

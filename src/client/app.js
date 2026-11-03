@@ -311,12 +311,11 @@ export function NotesApp({ ctx }) {
       if (target.kind === 'notebook') {
         await api.updateNotebook(target.id, { title: value })
       } else {
-        // 页面改名走 savePage（只换 title，正文原样带回，避免额外接口）
+        // 页面改名：不带 blocks，host 只改 title、不动正文
         const page = await api.readPage(target.id)
         await api.savePage({
           id: page.id,
           title: value,
-          markdown: page.markdown,
           rev: page.rev,
           baseMtimeMs: page.mtimeMs,
           baseSize: page.size,

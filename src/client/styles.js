@@ -317,93 +317,41 @@ const CSS = `
 }
 .n-banner-text { flex: 1; min-width: 0; }
 
-/* ---------- ProseMirror / TipTap ---------- */
-.n-prose {
-  outline: 0;
-  color: var(--dsw-alias-label-primary);
-  font-size: 14px;
-  line-height: 1.75;
+/* ---------- 编辑器骨架屏 ---------- */
+.n-editor-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 0;
+}
+.n-skel-line {
+  height: 12px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-3);
+  animation: n-skel-pulse 1.4s ease-in-out infinite;
+}
+.n-skel-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+@keyframes n-skel-pulse {
+  0%, 100% { opacity: .55; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .n-skel-line { animation: none; }
+}
+
+/* ---------- BlockNote 外壳 ---------- */
+.n-blocknote {
   min-height: 320px;
 }
-.n-prose > * + * { margin-top: .7em; }
-.n-prose h1 { font-size: 1.6em; font-weight: 650; margin-top: 1.1em; line-height: 1.35; }
-.n-prose h2 { font-size: 1.3em; font-weight: 650; margin-top: 1em; line-height: 1.4; }
-.n-prose h3 { font-size: 1.12em; font-weight: 650; margin-top: .9em; }
-.n-prose h4, .n-prose h5, .n-prose h6 { font-size: 1em; font-weight: 650; margin-top: .8em; }
-.n-prose p { margin: 0; }
-.n-prose ul, .n-prose ol { padding-left: 1.4em; margin: .4em 0; }
-.n-prose ul { list-style: disc; }
-.n-prose ol { list-style: decimal; }
-.n-prose li > p { margin: 0; }
-.n-prose blockquote {
-  border-left: 3px solid var(--dsw-alias-border-l3);
-  padding-left: .8em;
-  color: var(--dsw-alias-label-secondary);
-  margin: .6em 0;
+.n-blocknote .bn-container {
+  background: transparent;
 }
-.n-prose code {
-  font-family: var(--dsw-font-markdown-code-font-family, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: .9em;
-  padding: .12em .35em;
-  border-radius: 4px;
-  background: var(--dsw-alias-markdown-inline-code);
-}
-.n-prose pre {
-  background: var(--dsw-alias-markdown-code-block);
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: var(--dsw-radius-md, 8px);
-  padding: 10px 12px;
-  overflow: auto;
-}
-.n-prose pre code { background: transparent; padding: 0; font-size: .875em; line-height: 1.6; }
-.n-prose a { color: var(--dsw-alias-link); text-decoration: underline; text-underline-offset: 2px; }
-.n-prose hr { border: 0; border-top: 1px solid var(--dsw-alias-border-l2); margin: 1.2em 0; }
-.n-prose img { max-width: 100%; border-radius: var(--dsw-radius-md, 8px); display: block; }
-.n-prose img.ProseMirror-selectednode { outline: 2px solid var(--dsw-alias-brand-primary); }
-.n-prose table {
-  border-collapse: collapse;
-  table-layout: fixed;
-  width: 100%;
-  margin: .8em 0;
-  overflow: hidden;
-}
-.n-prose th, .n-prose td {
-  border: 1px solid var(--dsw-alias-border-l2);
-  padding: 6px 8px;
-  vertical-align: top;
-  position: relative;
-  min-width: 60px;
-}
-.n-prose th { background: var(--dsw-alias-bg-layer-2); font-weight: 600; text-align: left; }
-.n-prose .column-resize-handle {
-  position: absolute;
-  right: -2px;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  background: var(--dsw-alias-brand-primary);
-  pointer-events: none;
-}
-.n-prose ul[data-type="taskList"] { list-style: none; padding-left: .2em; }
-.n-prose ul[data-type="taskList"] li {
-  display: flex;
-  align-items: flex-start;
-  gap: .5em;
-}
-.n-prose ul[data-type="taskList"] li > label { flex: none; margin-top: .28em; }
-.n-prose ul[data-type="taskList"] li > div { flex: 1; min-width: 0; }
-.n-prose ul[data-type="taskList"] input[type="checkbox"] {
-  width: 14px;
-  height: 14px;
-  accent-color: var(--dsw-alias-brand-primary);
-  cursor: pointer;
-}
-.n-prose p.is-editor-empty:first-child::before {
-  content: attr(data-placeholder);
-  color: var(--dsw-alias-label-tertiary);
-  float: left;
-  height: 0;
-  pointer-events: none;
+.n-blocknote .bn-editor {
+  min-height: 320px;
 }
 `
 

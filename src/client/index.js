@@ -12,10 +12,16 @@
  * 且 dsh-client-ui-sidebar 订阅了 locale 变化，所以切语言会即时更新。
  *
  * 不 import 任何 @deepseek-ai/* 包：react 由 ModuleLoader 的 platform 表提供，
- * TipTap 及其依赖由 tools/build.mjs 打进 bundle。
+ * BlockNote（含 ProseMirror / Mantine）全部打进独立的 client/editor.js，面板打开才加载。
  */
 
+import * as React from 'react'
+import * as jsxRuntime from 'react/jsx-runtime'
+import * as ReactDOM from 'react-dom'
+import * as ReactDOMClient from 'react-dom/client'
+
 import { NotesApp } from './app.js'
+import { providePlatformModules } from './blocknote-runtime.js'
 import { PanelIcon } from './icons.js'
 import { SessionNotesMenuItem } from './session-menu.js'
 import { installStyles } from './styles.js'
@@ -24,6 +30,15 @@ export const inject = ['slots']
 
 export function apply(ctx) {
   installStyles()
+
+  // 编辑器重包（client/editor.js）由本 bundle 带着**同一份** react 实例去调用，
+  // 否则 BlockNote 里会出现两份 React → invalid hook call。
+  providePlatformModules({
+    react: React,
+    'react/jsx-runtime': jsxRuntime,
+    'react-dom': ReactDOM,
+    'react-dom/client': ReactDOMClient,
+  })
 
   ctx.slots.inject('sidebar.panellist', () =>
     ctx.slots.register(

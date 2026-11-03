@@ -5,21 +5,25 @@
  *
  * 设计要点（与 docs/STORE-CONTRACT.md 一一对应）：
  *
- *  - Markdown 是真源：正文写在 `<rootDir>/<notebookId>/<pageId>.md`，前面一段固定
- *    顺序的 YAML frontmatter；`index.json` 只是缓存，init() 时按磁盘校正。
+ *  - **BlockNote blocks JSON 是真源**：正文写在 `<rootDir>/<notebookId>/<pageId>.json`
+ *    （`{ id, title, created, updated, tags, blocks }`），旁边 `<pageId>.md` 是每次保存
+ *    重写的 Markdown 镜像（YAML frontmatter + blocksToMarkdown(blocks)），供搜索/导出/
+ *    Agent 读，不读回（迁移除外）。`index.json` 只是缓存，init() 时按磁盘校正。
  *  - 单写者：所有写操作走 `_serial()` 的 Promise 链，进程内天然串行。
  *  - 原子写：临时文件 → fh.sync() → close → rename，断电不会留下半个文件。
  *  - 页面级乐观锁：savePage 比对 rev；比对 baseMtimeMs/baseSize 发现外部改动时，
- *    先把磁盘现状复制成 `.conflict-<ts>.md`，再照常写入。
- *  - 删除进回收站：`.trash/<YYYYMMDD-HHmmss-SSS>/` 下整块移入，可人工取回。
+ *    先把磁盘上的整份 `.json` 复制成 `.conflict-<ts>.json`，再照常写入。
+ *  - 删除进回收站：`.trash/<YYYYMMDD-HHmmss-SSS>/` 下整块移入（.json 与 .md 都进）。
  *
- * 依赖：只用 node:fs / node:path / node:os / node:crypto，不引入任何 npm 包。
+ * 依赖：只用 node:fs / node:path / node:os / node:crypto（外加同目录的 markdown-blocks）。
  */
 
 const fs = require('node:fs')
 const path = require('node:path')
 const os = require('node:os')
 const crypto = require('node:crypto')
+
+const { markdownToBlocks, blocksToMarkdown } = require('./markdown-blocks')
 
 // 用 fs.promises 而不是再 require('node:fs/promises')，保持依赖面只有 node:fs。
 const fsp = fs.promises
@@ -228,10 +232,25 @@ function formatTags(tags) {
 }
 
 /**
- * 组装页面文件内容。frontmatter 字段顺序固定（id/title/created/updated/tags），
- * `---` 之后恰好一个空行接正文，正文原样拼接不做格式化。
+ * 组装页面 JSON（真源）。字段顺序固定：id/title/created/updated/tags/blocks。
  */
-function buildPageFile(meta, body) {
+function buildPageJson(meta, blocks) {
+  const payload = {
+    id: meta.id,
+    title: cleanTitle(meta.title),
+    created: new Date(meta.created).toISOString(),
+    updated: new Date(meta.updated).toISOString(),
+    tags: Array.isArray(meta.tags) ? meta.tags.map((t) => String(t).trim()).filter(Boolean) : [],
+    blocks: Array.isArray(blocks) ? blocks : [],
+  }
+  return `${JSON.stringify(payload, null, 2)}\n`
+}
+
+/**
+ * 组装 Markdown 镜像。frontmatter 字段与 `.json` 保持一致
+ * （id/title/created/updated/tags），`---` 之后恰好一个空行接正文。
+ */
+function buildMirrorFile(meta, markdown) {
   const head = [
     '---',
     `id: ${meta.id}`,
@@ -242,7 +261,43 @@ function buildPageFile(meta, body) {
     '---',
     '',
   ].join('\n')
-  return `${head}\n${body === undefined || body === null ? '' : String(body)}`
+  return `${head}\n${markdown === undefined || markdown === null ? '' : String(markdown)}`
+}
+
+/**
+ * 解析 `<pageId>.json`。解析失败返回 null，由调用方决定跳过（reconcile）或回退。
+ *
+ * @returns {{ id: string, title: string, created: number|undefined,
+ *   updated: number|undefined, tags: string[], blocks: object[] }|null}
+ */
+function parsePageJson(raw) {
+  let parsed
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (!parsed || typeof parsed !== 'object') return null
+  return {
+    id: typeof parsed.id === 'string' ? parsed.id : '',
+    title: typeof parsed.title === 'string' ? parsed.title : '',
+    created: toMs(parsed.created, undefined),
+    updated: toMs(parsed.updated, undefined),
+    tags: Array.isArray(parsed.tags) ? parsed.tags.map((t) => String(t).trim()).filter(Boolean) : [],
+    blocks: Array.isArray(parsed.blocks) ? parsed.blocks : [],
+  }
+}
+
+/** blocks 数组的序列化字节数：索引 `size` 与 `maxPageBytes` 都用这个口径。 */
+function blocksSize(blocks) {
+  return Buffer.byteLength(JSON.stringify(Array.isArray(blocks) ? blocks : []), 'utf8')
+}
+
+/** blocks 优先；只给 markdown 时转块；都没有则空文档。 */
+function normalizeBlocks(blocks, markdown) {
+  if (Array.isArray(blocks)) return blocks
+  if (typeof markdown === 'string' && markdown) return markdownToBlocks(markdown)
+  return []
 }
 
 /**
@@ -397,10 +452,12 @@ function toPageRow(row) {
   }
 }
 
-function toPageDetail(row, markdown, mtimeMs, file) {
+/** Page 详情：`{ ...Page行, blocks, markdown, mtimeMs, path }`（契约 §1.3）。 */
+function toPageDetail(row, blocks, markdown, mtimeMs, file) {
   return {
     ...toPageRow(row),
-    markdown,
+    blocks: Array.isArray(blocks) ? blocks : [],
+    markdown: typeof markdown === 'string' ? markdown : '',
     mtimeMs,
     path: file,
   }
@@ -574,16 +631,55 @@ class NotesStore {
         continue
       }
 
+      // .json 是真源；.md 是镜像（旧版页面可能只有 .md，需要迁移）
+      const jsonNames = []
+      const mdNames = []
       for (const f of files) {
         if (!f.isFile()) continue
-        if (!f.name.endsWith('.md')) continue
         // 冲突副本 / 写盘残留不纳入索引
         if (f.name.includes('.conflict-') || f.name.includes('.tmp-')) continue
-        const pageId = f.name.slice(0, -3)
-        if (!pageId) continue
-        seenPages.add(pageId)
+        if (f.name.endsWith('.json')) jsonNames.push(f.name)
+        else if (f.name.endsWith('.md')) mdNames.push(f.name)
+      }
 
-        const file = path.join(dir, f.name)
+      // v1 遗留：只有 .md 没有 .json → markdownToBlocks 迁出 .json（只迁一次）
+      const jsonSet = new Set(jsonNames)
+      for (const mdName of mdNames) {
+        const pageId = mdName.slice(0, -3)
+        if (!pageId || jsonSet.has(`${pageId}.json`)) continue
+        const mdFile = path.join(dir, mdName)
+        let raw = ''
+        let mdStat = null
+        try {
+          raw = await fsp.readFile(mdFile, 'utf8')
+          mdStat = await fsp.stat(mdFile)
+        } catch {
+          continue
+        }
+        const parsed = parsePageFile(raw)
+        const created = toMs(parsed.data.created, (mdStat && (mdStat.birthtimeMs || mdStat.mtimeMs)) || Date.now())
+        const updated = toMs(parsed.data.updated, (mdStat && mdStat.mtimeMs) || created)
+        const title = cleanName(parsed.data.title, pageId)
+        const tags = Array.isArray(parsed.data.tags) ? parsed.data.tags : []
+        const blocks = markdownToBlocks(parsed.body)
+        try {
+          await writeFileAtomic(
+            path.join(dir, `${pageId}.json`),
+            buildPageJson({ id: pageId, title, created, updated, tags }, blocks),
+          )
+        } catch {
+          continue // 迁移失败就当这页不存在，下次 init 再试
+        }
+        jsonSet.add(`${pageId}.json`)
+        jsonNames.push(`${pageId}.json`)
+        changed = true
+      }
+
+      for (const jsonName of jsonNames) {
+        const pageId = jsonName.slice(0, -5)
+        if (!pageId) continue
+
+        const file = path.join(dir, jsonName)
         let stat
         try {
           stat = await fsp.stat(file)
@@ -593,19 +689,26 @@ class NotesStore {
 
         const row = pageMap.get(pageId)
         const sameFile = row && row.notebookId === name && row.mtimeMs === stat.mtimeMs
-        if (sameFile) continue // 索引记录与磁盘一致，不读文件
+        if (sameFile) {
+          seenPages.add(pageId)
+          continue // 索引记录与磁盘一致，不读文件
+        }
 
-        let content = ''
+        let raw = ''
         try {
-          content = await fsp.readFile(file, 'utf8')
+          raw = await fsp.readFile(file, 'utf8')
         } catch {
           continue
         }
-        const parsed = parsePageFile(content)
-        const created = toMs(parsed.data.created, (row && row.createdAt) ?? stat.birthtimeMs ?? stat.mtimeMs)
-        const updated = toMs(parsed.data.updated, row ? row.updatedAt ?? stat.mtimeMs : stat.mtimeMs)
-        const title = cleanName(parsed.data.title, row ? row.title : pageId)
-        const tags = Array.isArray(parsed.data.tags) ? parsed.data.tags : []
+        const parsed = parsePageJson(raw)
+        // 解析失败：跳过该页，不抛错（契约 §2）
+        if (!parsed) continue
+
+        const created = toMs(parsed.created, (row && row.createdAt) ?? stat.birthtimeMs ?? stat.mtimeMs)
+        const updated = toMs(parsed.updated, row ? row.updatedAt ?? stat.mtimeMs : stat.mtimeMs)
+        const title = cleanName(parsed.title, row ? row.title : pageId)
+        const mirror = await this._readMirror(path.join(dir, `${pageId}.md`))
+        const markdown = mirror === null ? blocksToMarkdown(parsed.blocks) : mirror
         const nextRow = {
           id: pageId,
           notebookId: name,
@@ -614,12 +717,13 @@ class NotesStore {
           rev: row ? row.rev ?? 1 : 1,
           createdAt: created,
           updatedAt: updated,
-          size: Buffer.byteLength(parsed.body, 'utf8'),
+          size: blocksSize(parsed.blocks),
           mtimeMs: stat.mtimeMs,
         }
         pageMap.set(pageId, nextRow)
-        this._tags.set(pageId, tags)
-        this._plain.set(pageId, plainText(parsed.body))
+        seenPages.add(pageId)
+        this._tags.set(pageId, parsed.tags)
+        this._plain.set(pageId, plainText(markdown))
         changed = true
       }
     }
@@ -702,6 +806,11 @@ class NotesStore {
   /* ---------------- 内部小工具 ---------------- */
 
   _pageFile(notebookId, pageId) {
+    return path.join(this.rootDir, String(notebookId), `${pageId}.json`)
+  }
+
+  /** Markdown 镜像：与 `.json` 同名同目录。 */
+  _mirrorFile(notebookId, pageId) {
     return path.join(this.rootDir, String(notebookId), `${pageId}.md`)
   }
 
@@ -791,8 +900,9 @@ class NotesStore {
     return counts
   }
 
-  _assertPageSize(markdown) {
-    const size = Buffer.byteLength(String(markdown ?? ''), 'utf8')
+  /** 体积上限作用在 blocks JSON 上（契约 §4.4）。 */
+  _assertPageSize(blocks) {
+    const size = blocksSize(blocks)
     if (size > this.maxPageBytes) {
       throw tooLarge(`页面内容超过上限（${size} > ${this.maxPageBytes} 字节）`)
     }
@@ -818,24 +928,60 @@ class NotesStore {
     return dir
   }
 
-  /** 读取磁盘上的页面现状（文件不存在时 fallback 为空正文）。 */
-  async _readDiskPage(row) {
-    const file = this._pageFile(row.notebookId, row.id)
+  /** 读 `.md` 镜像的正文（不含 frontmatter）；文件不存在返回 null。 */
+  async _readMirror(file) {
     let raw = null
     try {
       raw = await fsp.readFile(file, 'utf8')
     } catch (err) {
       if (!err || err.code !== 'ENOENT') throw err
     }
-    if (raw === null) return { file, raw: null, stat: null, data: {}, body: '' }
-    let stat = null
+    if (raw === null) return null
+    return parsePageFile(raw).body
+  }
+
+  /**
+   * 读取磁盘上的页面现状。
+   *
+   *  - `.json` 是真源，`blocks` 从它读；
+   *  - `markdown` 取 `.md` 镜像，镜像不存在就由 `blocksToMarkdown(blocks)` 生成；
+   *  - `stat` / `mtimeMs` 一律用 `.json` 的（保存时先写 .json 再写镜像）。
+   */
+  async _readDiskPage(row) {
+    const file = this._pageFile(row.notebookId, row.id)
+    const mirrorFile = this._mirrorFile(row.notebookId, row.id)
+
+    let raw = null
     try {
-      stat = await fsp.stat(file)
-    } catch {
-      stat = null
+      raw = await fsp.readFile(file, 'utf8')
+    } catch (err) {
+      if (!err || err.code !== 'ENOENT') throw err
     }
-    const parsed = parsePageFile(raw)
-    return { file, raw, stat, data: parsed.data, body: parsed.body }
+    let stat = null
+    if (raw !== null) {
+      try {
+        stat = await fsp.stat(file)
+      } catch {
+        stat = null
+      }
+    }
+
+    const parsed = raw === null ? null : parsePageJson(raw)
+    const blocks = parsed ? parsed.blocks : []
+    const mirror = await this._readMirror(mirrorFile)
+    const markdown = mirror === null ? blocksToMarkdown(blocks) : mirror
+    return {
+      file,
+      mirrorFile,
+      raw,
+      stat,
+      data: parsed || {},
+      blocks,
+      markdown,
+      hasJson: raw !== null,
+      hasMirror: mirror !== null,
+      corrupt: raw !== null && parsed === null,
+    }
   }
 
   /* ---------------- 树 ---------------- */
@@ -916,20 +1062,25 @@ class NotesStore {
 
   /* ---------------- 页面 ---------------- */
 
-  /** 读页面详情（含 markdown 与磁盘 mtime）。 */
+  /** 读页面详情：`{ ...Page行, blocks, markdown, mtimeMs, path }`。 */
   async readPage(id) {
     await this.init()
     const pageId = String(id ?? '')
     const row = this._findPage(pageId)
     if (!row) throw notFound(`页面不存在: ${pageId}`)
     const disk = await this._readDiskPage(row)
-    if (disk.raw === null) throw notFound(`页面文件不存在: ${pageId}`)
+    if (!disk.hasJson && !disk.hasMirror) throw notFound(`页面文件不存在: ${pageId}`)
     if (disk.data.tags && disk.data.tags.length) this._tags.set(pageId, disk.data.tags)
-    this._plain.set(pageId, plainText(disk.body))
-    return toPageDetail(row, disk.body, disk.stat ? disk.stat.mtimeMs : row.mtimeMs ?? 0, disk.file)
+    this._plain.set(pageId, plainText(disk.markdown))
+    return toPageDetail(row, disk.blocks, disk.markdown, disk.stat ? disk.stat.mtimeMs : row.mtimeMs ?? 0, disk.file)
   }
 
-  /** 新建页面。 */
+  /**
+   * 新建页面。
+   *
+   * blocks 优先；只给 markdown 时先 markdownToBlocks 转块，镜像统一由
+   * `blocksToMarkdown(blocks)` 生成（单一生成器，契约 §4.4）。
+   */
   async createPage(args = {}) {
     await this.init()
     return this._serial(async () => {
@@ -938,8 +1089,9 @@ class NotesStore {
       if (!nb) throw notFound(`笔记本不存在: ${notebookId}`)
 
       const title = cleanTitle(args.title, '无标题')
-      const markdown = args.markdown === undefined || args.markdown === null ? '' : String(args.markdown)
-      this._assertPageSize(markdown)
+      const blocks = normalizeBlocks(args.blocks, args.markdown)
+      this._assertPageSize(blocks)
+      const markdown = blocksToMarkdown(blocks)
 
       const now = Date.now()
       const id = newId('p_')
@@ -952,12 +1104,14 @@ class NotesStore {
         rev: 1,
         createdAt: now,
         updatedAt: now,
-        size: Buffer.byteLength(markdown, 'utf8'),
+        size: blocksSize(blocks),
         mtimeMs: now,
       }
 
+      const meta = { id, title, created: now, updated: now, tags: [] }
       const file = this._pageFile(notebookId, id)
-      await writeFileAtomic(file, buildPageFile({ id, title, created: now, updated: now, tags: [] }, markdown))
+      await writeFileAtomic(file, buildPageJson(meta, blocks))
+      await writeFileAtomic(this._mirrorFile(notebookId, id), buildMirrorFile(meta, markdown))
       const stat = await fsp.stat(file)
       row.mtimeMs = stat.mtimeMs
 
@@ -966,16 +1120,19 @@ class NotesStore {
       this._plain.set(id, plainText(markdown))
       nb.updatedAt = now
       await this._persist()
-      return toPageDetail(row, markdown, stat.mtimeMs, file)
+      return toPageDetail(row, blocks, markdown, stat.mtimeMs, file)
     })
   }
 
   /**
    * 保存页面。
    *
+   *  - blocks 省略 = 不动正文（只改标题）；
+   *  - 不接受外部 markdown：镜像**始终**由 `blocksToMarkdown(blocks)` 生成
+   *    （BlockNote 0.57 的 blocksToMarkdownLossy 会带 4 空格悬挂缩进，不能用）；
    *  - rev 不匹配 → 409，payload = 当前 Page 详情；
-   *  - baseMtimeMs/baseSize 与磁盘现状不一致 → 先把磁盘现状复制成
-   *    `<pageId>.conflict-<ts>.md`，再照常写入，返回里带 conflictFile。
+   *  - baseMtimeMs/baseSize 与磁盘 `.json` 不一致 → 先把整份 `.json` 原样复制成
+   *    `<pageId>.conflict-<ts>.json`，再照常写入，返回里带 conflictFile。
    */
   async savePage(args = {}) {
     await this.init()
@@ -984,40 +1141,49 @@ class NotesStore {
       const row = this._findPage(pageId)
       if (!row) throw notFound(`页面不存在: ${pageId}`)
 
-      const hasMarkdown = args.markdown !== undefined && args.markdown !== null
-      const markdown = hasMarkdown ? String(args.markdown) : null
-      if (markdown !== null) this._assertPageSize(markdown)
-
+      const hasBlocks = Array.isArray(args.blocks)
       const disk = await this._readDiskPage(row)
-      const currentBody = disk.body
-      const currentTitle = cleanName(disk.data.title, row.title)
+      if (!disk.hasJson) throw notFound(`页面文件不存在: ${pageId}`)
+
+      const currentBlocks = disk.blocks
       const mtimeMs = disk.stat ? disk.stat.mtimeMs : row.mtimeMs ?? Date.now()
+
+      // 文件损坏时只有在显式给 blocks（= 整篇重写）时才敢覆盖正文。
+      if (disk.corrupt && !hasBlocks) {
+        const current = toPageDetail(row, currentBlocks, disk.markdown, mtimeMs, disk.file)
+        throw new StoreError(409, '页面文件损坏，需整篇重写才能保存', current)
+      }
+
+      const nextBlocks = hasBlocks ? args.blocks : currentBlocks
+      if (hasBlocks) this._assertPageSize(nextBlocks)
+      const nextMarkdown = blocksToMarkdown(nextBlocks)
+      const nextSize = blocksSize(nextBlocks)
 
       // 乐观锁（页面级）
       const rev = args.rev === undefined || args.rev === null ? null : Number(args.rev)
       if (rev !== null && rev !== row.rev) {
-        const current = toPageDetail(row, currentBody, mtimeMs, disk.file)
+        const current = toPageDetail(row, currentBlocks, disk.markdown, mtimeMs, disk.file)
         throw new StoreError(409, '页面已在别处被修改，请重新读取后再保存', current)
       }
 
-      // 外部改动检测：不一致时先把磁盘现状留一份，不打断本次写入。
+      // 外部改动检测：不一致时先把磁盘现状（整份 .json）留一份，不打断本次写入。
       let conflictFile
       if (disk.stat) {
-        const diskSize = Buffer.byteLength(currentBody, 'utf8')
+        const currentSize = blocksSize(currentBlocks)
         const mtimeChanged =
           args.baseMtimeMs !== undefined &&
           args.baseMtimeMs !== null &&
           Number(args.baseMtimeMs) !== disk.stat.mtimeMs
         const sizeChanged =
-          args.baseSize !== undefined && args.baseSize !== null && Number(args.baseSize) !== diskSize
+          args.baseSize !== undefined && args.baseSize !== null && Number(args.baseSize) !== currentSize
         if (mtimeChanged || sizeChanged) {
-          conflictFile = path.join(path.dirname(disk.file), `${row.id}.conflict-${Date.now()}.md`)
-          await writeFileAtomic(conflictFile, disk.raw === null ? currentBody : disk.raw)
+          conflictFile = path.join(path.dirname(disk.file), `${row.id}.conflict-${Date.now()}.json`)
+          await writeFileAtomic(conflictFile, disk.raw === null ? '' : disk.raw)
         }
       }
 
-      const nextBody = markdown === null ? currentBody : markdown
-      const nextTitle = args.title === undefined || args.title === null ? currentTitle : cleanTitle(args.title, '无标题')
+      const nextTitle =
+        args.title === undefined || args.title === null ? cleanName(disk.data.title, row.title) : cleanTitle(args.title, '无标题')
       const tags = disk.data.tags ?? this._tags.get(row.id) ?? []
       const now = Date.now()
 
@@ -1027,68 +1193,64 @@ class NotesStore {
         rev: (row.rev ?? 1) + 1,
         createdAt: row.createdAt,
         updatedAt: now,
-        size: Buffer.byteLength(nextBody, 'utf8'),
+        size: nextSize,
       }
-      await writeFileAtomic(
-        disk.file,
-        buildPageFile({ id: row.id, title: nextTitle, created: row.createdAt, updated: now, tags }, nextBody),
-      )
+      const meta = { id: row.id, title: nextTitle, created: row.createdAt, updated: now, tags }
+      await writeFileAtomic(disk.file, buildPageJson(meta, nextBlocks))
+      await writeFileAtomic(disk.mirrorFile, buildMirrorFile(meta, nextMarkdown))
       const stat = await fsp.stat(disk.file)
       nextRow.mtimeMs = stat.mtimeMs
 
       this._replacePage(nextRow)
       this._tags.set(row.id, tags)
-      this._plain.set(row.id, plainText(nextBody))
+      this._plain.set(row.id, plainText(nextMarkdown))
       await this._persist()
 
-      const page = toPageDetail(nextRow, nextBody, stat.mtimeMs, disk.file)
+      const page = toPageDetail(nextRow, nextBlocks, nextMarkdown, stat.mtimeMs, disk.file)
       return conflictFile ? { page, conflictFile } : { page }
     })
   }
 
-  /** 在正文末尾追加（自动补一个换行分隔）。 */
+  /** 在正文末尾追加：markdown 转块后追加，镜像由全部 blocks 重新生成。 */
   async appendPage(args = {}) {
     await this.init()
     return this._serial(async () => {
       const pageId = String(args.id ?? '')
       const row = this._findPage(pageId)
       if (!row) throw notFound(`页面不存在: ${pageId}`)
-      const chunk = args.markdown === undefined || args.markdown === null ? '' : String(args.markdown)
-
       const disk = await this._readDiskPage(row)
-      const current = disk.body
-      let nextBody
-      if (!current) nextBody = chunk
-      else if (current.endsWith('\n')) nextBody = current + chunk
-      else nextBody = `${current}\n${chunk}`
-      this._assertPageSize(nextBody)
+      if (!disk.hasJson) throw notFound(`页面文件不存在: ${pageId}`)
+
+      const chunk = args.markdown === undefined || args.markdown === null ? '' : String(args.markdown)
+      const appended = Array.isArray(args.blocks) ? args.blocks : markdownToBlocks(chunk)
+      const nextBlocks = [...disk.blocks, ...appended]
+      this._assertPageSize(nextBlocks)
+      const nextMarkdown = blocksToMarkdown(nextBlocks)
 
       const tags = disk.data.tags ?? this._tags.get(row.id) ?? []
+      const title = cleanName(disk.data.title, row.title)
       const now = Date.now()
       const nextRow = {
         ...row,
+        title,
         rev: (row.rev ?? 1) + 1,
         updatedAt: now,
-        size: Buffer.byteLength(nextBody, 'utf8'),
+        size: blocksSize(nextBlocks),
       }
-      await writeFileAtomic(
-        disk.file,
-        buildPageFile(
-          { id: row.id, title: cleanName(disk.data.title, row.title), created: row.createdAt, updated: now, tags },
-          nextBody,
-        ),
-      )
+      const meta = { id: row.id, title, created: row.createdAt, updated: now, tags }
+      await writeFileAtomic(disk.file, buildPageJson(meta, nextBlocks))
+      await writeFileAtomic(disk.mirrorFile, buildMirrorFile(meta, nextMarkdown))
       const stat = await fsp.stat(disk.file)
       nextRow.mtimeMs = stat.mtimeMs
       this._replacePage(nextRow)
       this._tags.set(row.id, tags)
-      this._plain.set(row.id, plainText(nextBody))
+      this._plain.set(row.id, plainText(nextMarkdown))
       await this._persist()
-      return toPageDetail(nextRow, nextBody, stat.mtimeMs, disk.file)
+      return toPageDetail(nextRow, nextBlocks, nextMarkdown, stat.mtimeMs, disk.file)
     })
   }
 
-  /** 删除页面：物理文件进回收站。 */
+  /** 删除页面：`.json` 与 `.md` 一起进回收站（一个桶里两个文件）。 */
   async deletePage(id) {
     await this.init()
     return this._serial(async () => {
@@ -1096,17 +1258,19 @@ class NotesStore {
       const row = this._findPage(pageId)
       if (!row) throw notFound(`页面不存在: ${pageId}`)
       const bucket = await this._trashBucket()
-      // 页面按 `<pageId>.md` 直接落在桶里（与契约 listTrash 的例子一致）；
+      // 页面按 `<pageId>.json` / `<pageId>.md` 落在桶里（与契约 listTrash 的例子一致）；
       // 笔记本删除则是整个目录进桶。
-      const dest = path.join(bucket, `${row.id}.md`)
-      const moved = await movePath(this._pageFile(row.notebookId, row.id), dest)
-      // 磁盘上本来就没有这个文件：别在回收站里留空桶
-      if (!moved) await fsp.rmdir(bucket).catch(() => {})
+      const destJson = path.join(bucket, `${row.id}.json`)
+      const destMd = path.join(bucket, `${row.id}.md`)
+      const movedJson = await movePath(this._pageFile(row.notebookId, row.id), destJson)
+      const movedMd = await movePath(this._mirrorFile(row.notebookId, row.id), destMd)
+      // 磁盘上本来就没有这两个文件：别在回收站里留空桶
+      if (!movedJson && !movedMd) await fsp.rmdir(bucket).catch(() => {})
       this._pages = this._pages.filter((p) => p.id !== pageId)
       this._tags.delete(pageId)
       this._plain.delete(pageId)
       await this._persist()
-      return { trashed: dest }
+      return { trashed: movedJson ? destJson : movedMd ? destMd : destJson }
     })
   }
 
@@ -1277,12 +1441,7 @@ class NotesStore {
       const titleHits = countOccurrences(title, needle)
       let plain = this._plain.get(row.id)
       if (plain === undefined) {
-        try {
-          const raw = fs.readFileSync(this._pageFile(row.notebookId, row.id), 'utf8')
-          plain = plainText(parsePageFile(raw).body)
-        } catch {
-          plain = ''
-        }
+        plain = this._syncPlain(row)
         this._plain.set(row.id, plain)
       }
       const bodyNorm = normalizeText(plain)
@@ -1308,6 +1467,26 @@ class NotesStore {
 
     hits.sort((a, b) => b.score - a.score || b.updatedAt - a.updatedAt || (a.id < b.id ? -1 : 1))
     return hits.slice(0, max)
+  }
+
+  /**
+   * 同步取一页的纯文本（搜索的懒加载兜底）。
+   * 优先读 `.md` 镜像；镜像缺失时用 `.json` 的 blocks 现场生成 Markdown。
+   */
+  _syncPlain(row) {
+    try {
+      const raw = fs.readFileSync(this._mirrorFile(row.notebookId, row.id), 'utf8')
+      return plainText(parsePageFile(raw).body)
+    } catch {
+      /* 镜像不存在，退到 .json */
+    }
+    try {
+      const raw = fs.readFileSync(this._pageFile(row.notebookId, row.id), 'utf8')
+      const parsed = parsePageJson(raw)
+      return plainText(parsed ? blocksToMarkdown(parsed.blocks) : '')
+    } catch {
+      return ''
+    }
   }
 
   /* ---------------- 附件 ---------------- */
@@ -1404,22 +1583,29 @@ class NotesStore {
       const disk = await this._readDiskPage(row)
       const now = Date.now()
       const tags = disk.data.tags ?? this._tags.get(row.id) ?? []
-      await writeFileAtomic(
-        disk.file,
-        buildPageFile({ id: row.id, title: nextTitle, created: row.createdAt, updated: now, tags }, disk.body),
-      )
+      const blocks = disk.blocks
+      const markdown = blocksToMarkdown(blocks)
+      const meta = { id: row.id, title: nextTitle, created: row.createdAt, updated: now, tags }
+      await writeFileAtomic(disk.file, buildPageJson(meta, blocks))
+      await writeFileAtomic(disk.mirrorFile, buildMirrorFile(meta, markdown))
       const stat = await fsp.stat(disk.file)
-      const nextRow = { ...row, title: nextTitle, updatedAt: now, mtimeMs: stat.mtimeMs }
-      this._replaceRowAndCache(nextRow, tags, disk.body)
+      const nextRow = {
+        ...row,
+        title: nextTitle,
+        updatedAt: now,
+        size: blocksSize(blocks),
+        mtimeMs: stat.mtimeMs,
+      }
+      this._replaceRowAndCache(nextRow, tags, markdown)
       await this._persist()
-      return toPageDetail(nextRow, disk.body, stat.mtimeMs, disk.file)
+      return toPageDetail(nextRow, blocks, markdown, stat.mtimeMs, disk.file)
     })
   }
 
-  _replaceRowAndCache(row, tags, body) {
+  _replaceRowAndCache(row, tags, markdown) {
     this._replacePage(row)
     this._tags.set(row.id, tags)
-    this._plain.set(row.id, plainText(body))
+    this._plain.set(row.id, plainText(markdown))
   }
 
   /**

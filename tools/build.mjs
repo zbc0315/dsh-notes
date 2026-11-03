@@ -1,12 +1,14 @@
 /**
- * 把 src/client/index.js（ESM + JSX）打包成 client/bundle.js。
+ * 构建三样东西：
  *
- * DSH 的 web client 加载协议：`window.__ModuleLoader__.load({ id, factory })`。
- * factory 收到一个 `require`，其静态模块表里有 react / react/jsx-runtime /
- * react-dom / react-dom/client 等（见 dsh-web-frontend 的静态表）。
+ *  1. `client/bundle.js`  主包 —— src/client/index.js，包成 `window.__ModuleLoader__.load()`
+ *  2. `client/editor.js`  编辑器重包 —— src/client/blocknote/entry.js，包成
+ *     `window.__DSH_NOTES_EDITOR_FACTORY__ = (require) => …`（面板打开才加载，省 1.4 MB 首屏）
+ *  3. `client/editor.css` BlockNote + Mantine 样式与 --dsw-* 令牌映射
  *
- * 所以本插件除这些 platform 模块外把 @tiptap/*、prosemirror、@tiptap/markdown
- * 全部打进来 —— 与宿主零版本耦合，卸载即干净。
+ * DSH 的 web client 加载协议：`__ModuleLoader__.load({ id, factory })`，factory 拿到一个
+ * `require`，其静态模块表里有 react / react/jsx-runtime / react-dom / react-dom/client。
+ * 主包与重包都只外置这些 platform 模块，其它（BlockNote、ProseMirror、Mantine）全部内联。
  *
  * 运行：npm run build
  *   --no-minify   保留可读产物（排错用）
@@ -21,19 +23,36 @@ const here = dirname(fileURLToPath(import.meta.url))
 const pkgRoot = resolve(here, '..')
 const pkg = JSON.parse(readFileSync(join(pkgRoot, 'package.json'), 'utf8'))
 
-const entry = join(pkgRoot, 'src', 'client', 'index.js')
-const outfile = join(pkgRoot, 'client', 'bundle.js')
+const clientDir = join(pkgRoot, 'client')
+const mainEntry = join(pkgRoot, 'src', 'client', 'index.js')
+const editorEntry = join(pkgRoot, 'src', 'client', 'blocknote', 'entry.js')
+const styleEntry = join(pkgRoot, 'src', 'client', 'blocknote', 'style.css')
 
-/** 宿主 __ModuleLoader__ 提供的 platform 模块（不打包，运行时 require）。 */
+const mainOut = join(clientDir, 'bundle.js')
+const editorOut = join(clientDir, 'editor.js')
+const styleOut = join(clientDir, 'editor.css')
+
+/** 宿主 __ModuleLoader__ / 我们自己的 factory 提供的 platform 模块（不打包，运行时注入）。 */
 const EXTERNAL = ['react', 'react/jsx-runtime', 'react-dom', 'react-dom/client']
 
 const args = new Set(process.argv.slice(2))
 const minify = !args.has('--no-minify')
 const watch = args.has('--watch')
 
-/** 把 esbuild 产出的 CJS 正文塞进 ModuleLoader 工厂。 */
-function wrap(code) {
-  const banner = `/* 由 tools/build.mjs 从 src/client/index.js 生成 —— 请勿手改。
+/* ------------------------------------------------------------------ *
+ * 包装
+ * ------------------------------------------------------------------ */
+
+function indent(code) {
+  return code
+    .split('\n')
+    .map((line) => (line.length === 0 ? line : '    ' + line))
+    .join('\n')
+}
+
+/** 主包：ModuleLoader 协议。 */
+function wrapMain(code) {
+  return `/* 由 tools/build.mjs 从 src/client/index.js 生成 —— 请勿手改。
  * 重新生成：npm run build
  */
 window.__ModuleLoader__.load({
@@ -42,81 +61,119 @@ window.__ModuleLoader__.load({
     var module = { exports: {} }
     var exports = module.exports
     Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" })
-`
-  const footer = `
+${indent(code)}
     return module.exports
   }
 })
 `
-  const indented = code
-    .split('\n')
-    .map((line) => (line.length === 0 ? line : '    ' + line))
-    .join('\n')
-  return banner + indented + footer
 }
 
-/** 一次完整构建：打包 → 包一层 → 落盘。 */
-async function run() {
-  const started = Date.now()
+/** 编辑器重包：只挂工厂，由主包带着 react 实例来调用。 */
+function wrapEditor(code) {
+  return `/* 由 tools/build.mjs 从 src/client/blocknote/entry.js 生成 —— 请勿手改。
+ * 重新生成：npm run build
+ */
+window.__DSH_NOTES_EDITOR_FACTORY__ = (require) => {
+  var module = { exports: {} }
+  var exports = module.exports
+  Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" })
+${indent(code)}
+  return module.exports
+}
+`
+}
+
+/* ------------------------------------------------------------------ *
+ * 构建
+ * ------------------------------------------------------------------ */
+
+const baseOptions = {
+  bundle: true,
+  write: false,
+  format: 'cjs',
+  platform: 'browser',
+  target: ['es2022'],
+  jsx: 'automatic',
+  loader: { '.js': 'jsx' },
+  external: EXTERNAL,
+  minify,
+  legalComments: 'none',
+  charset: 'utf8',
+  define: { 'process.env.NODE_ENV': '"production"' },
+  logLevel: 'warning',
+}
+
+async function buildMain() {
+  const result = await build({ ...baseOptions, entryPoints: [mainEntry] })
+  mkdirSync(clientDir, { recursive: true })
+  writeFileSync(mainOut, wrapMain(result.outputFiles[0].text), 'utf8')
+  return result.outputFiles[0].text.length
+}
+
+async function buildEditor() {
+  const result = await build({ ...baseOptions, entryPoints: [editorEntry] })
+  mkdirSync(clientDir, { recursive: true })
+  writeFileSync(editorOut, wrapEditor(result.outputFiles[0].text), 'utf8')
+  return result.outputFiles[0].text.length
+}
+
+async function buildStyle() {
   const result = await build({
-    entryPoints: [entry],
+    entryPoints: [styleEntry],
     bundle: true,
     write: false,
-    format: 'cjs',
-    platform: 'browser',
-    target: ['es2022'],
-    jsx: 'automatic',
-    loader: { '.js': 'jsx' },
-    external: EXTERNAL,
     minify,
-    legalComments: 'none',
     charset: 'utf8',
-    define: {
-      'process.env.NODE_ENV': '"production"',
-    },
     logLevel: 'warning',
   })
-  const code = result.outputFiles[0].text
-  mkdirSync(dirname(outfile), { recursive: true })
-  writeFileSync(outfile, wrap(code), 'utf8')
-  const kb = (Buffer.byteLength(code) / 1024).toFixed(1)
-  console.log(`built ${outfile} — ${kb} KB ${minify ? '(minified)' : '(readable)'} in ${Date.now() - started} ms`)
+  // write:false + css 入口时 esbuild 只产出 <stdout>，没有 .css 后缀，所以取第一个文件
+  const css = result.outputFiles[0]
+  if (!css) throw new Error('样式构建没有产出 css')
+  writeFileSync(styleOut, css.text, 'utf8')
+  return css.text.length
+}
+
+function kb(bytes) {
+  return `${(bytes / 1024).toFixed(1)} KB`
+}
+
+async function run() {
+  const started = Date.now()
+  const [mainSize, editorSize, styleSize] = await Promise.all([buildMain(), buildEditor(), buildStyle()])
+  console.log(
+    `built client/bundle.js (${kb(mainSize)}) · client/editor.js (${kb(editorSize)}) · client/editor.css (${kb(
+      styleSize,
+    )}) ${minify ? '[minified]' : '[readable]'} in ${Date.now() - started} ms`,
+  )
 }
 
 if (watch) {
-  const ctx = await context({
-    entryPoints: [entry],
-    bundle: true,
+  const rebuild = async () => {
+    try {
+      await run()
+    } catch (error) {
+      console.error(error)
+    }
+  }
+  const ctxMain = await context({
+    ...baseOptions,
+    entryPoints: [mainEntry],
     write: false,
-    format: 'cjs',
-    platform: 'browser',
-    target: ['es2022'],
-    jsx: 'automatic',
-    loader: { '.js': 'jsx' },
-    external: EXTERNAL,
-    minify,
-    legalComments: 'none',
-    charset: 'utf8',
-    define: { 'process.env.NODE_ENV': '"production"' },
-    logLevel: 'warning',
     plugins: [
       {
-        name: 'module-loader-wrap',
-        setup(b) {
-          b.onEnd(async (res) => {
-            if (res.errors.length > 0) return
-            const out = res.outputFiles && res.outputFiles[0]
-            if (!out) return
-            mkdirSync(dirname(outfile), { recursive: true })
-            writeFileSync(outfile, wrap(out.text), 'utf8')
-            console.log(`rebuilt ${outfile} — ${(Buffer.byteLength(out.text) / 1024).toFixed(1)} KB`)
+        name: 'wrap-main',
+        setup(builder) {
+          builder.onEnd(async (res) => {
+            if (res.errors.length || !res.outputFiles?.[0]) return
+            writeFileSync(mainOut, wrapMain(res.outputFiles[0].text), 'utf8')
+            console.log(`rebuilt client/bundle.js (${kb(res.outputFiles[0].text.length)})`)
           })
         },
       },
     ],
   })
-  await ctx.watch()
-  console.log('watching src/client …')
+  await ctxMain.watch()
+  console.log('watching src/client …（编辑器重包与样式改动请重跑 npm run build）')
 } else {
   await run()
 }
