@@ -1,0 +1,38 @@
+{
+  "meta": {
+    "title": "All notebooks",
+    "description": "Workspace-scoped Markdown notebooks: one sidebar entry, TipTap rich text, autosave, and Agent read/write access."
+  },
+  "panel": {
+    "label": "All notebooks",
+    "title": "All notebooks"
+  },
+  "workspace": {
+    "current": "Current workspace",
+    "none": "No workspace selected",
+    "create": "New notebook",
+    "open": "Open notebook",
+    "orphan": "Orphan"
+  },
+  "actions": {
+    "newNotebook": "New notebook",
+    "newPage": "New page",
+    "newChild": "New sub-notebook",
+    "rename": "Rename",
+    "delete": "Delete",
+    "export": "Export Markdown",
+    "search": "Search",
+    "save": "Save",
+    "saved": "Saved",
+    "saving": "Saving…",
+    "conflict": "Changed elsewhere",
+    "retry": "Retry",
+    "empty": "No notebooks yet",
+    "emptyHint": "Pick a workspace on the left, then click “New notebook”.",
+    "noPage": "Pick a page to start writing, or create one.",
+    "untitled": "Untitled",
+    "trash": "Trash",
+    "deleteConfirm": "This moves it to the trash. Delete?",
+    "searchPlaceholder": "Search titles and text…"
+  }
+}

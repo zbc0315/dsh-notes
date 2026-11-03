@@ -1,0 +1,81 @@
+{
+  "name": "@tom2012/dsh-notes",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH Web 笔记本插件：左侧栏统一入口「全部笔记本」，按工作区新建/打开子笔记本，TipTap 富文本编辑器，Markdown 真源，可供 Agent 读写。",
+  "license": "MIT",
+  "author": {
+    "name": "zbc0315"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zbc0315/dsh-notes.git"
+  },
+  "homepage": "https://github.com/zbc0315/dsh-notes#readme",
+  "bugs": {
+    "url": "https://github.com/zbc0315/dsh-notes/issues"
+  },
+  "main": "src/host/index.js",
+  "exports": {
+    ".": "./src/host/index.js",
+    "./client": "./client/bundle.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src/host",
+    "client",
+    "locale",
+    "icon.svg",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20",
+    "dsh": ">=0.2.1-rc.5"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "check": "node --check src/host/index.js && node --check src/host/store.js && node --check src/host/routes.js && node --check src/host/tools.js",
+    "selftest": "node test/selftest.mjs",
+    "smoke": "node test/client-smoke.mjs",
+    "test": "npm run build && npm run check && npm run selftest && npm run smoke && node --test test/store.test.mjs"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "notes",
+    "notebook",
+    "markdown",
+    "tiptap"
+  ],
+  "devDependencies": {
+    "@tiptap/extension-image": "^3.32.2",
+    "@tiptap/extension-link": "^3.32.2",
+    "@tiptap/extension-placeholder": "^3.32.2",
+    "@tiptap/extension-table": "^3.32.2",
+    "@tiptap/extension-task-item": "^3.32.2",
+    "@tiptap/extension-task-list": "^3.32.2",
+    "@tiptap/markdown": "^3.32.2",
+    "@tiptap/pm": "^3.32.2",
+    "@tiptap/react": "^3.32.2",
+    "@tiptap/starter-kit": "^3.32.2",
+    "esbuild": "^0.28.2",
+    "jsdom": "^27.4.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  }
+}

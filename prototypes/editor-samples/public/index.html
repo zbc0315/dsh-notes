@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dsh-notes · 编辑器小样</title>
+<link rel="stylesheet" href="./assets/blocknote.css">
+<link rel="stylesheet" href="./assets/crepe.css">
+<link rel="stylesheet" href="./assets/vditor.css">
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f7f7f5;
+    --panel: #ffffff;
+    --text: #1f2328;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --accent: #2f6feb;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(247,247,245,.88);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+    padding: 14px 24px 0;
+  }
+  .headline { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+  .headline h1 { font-size: 17px; margin: 0; font-weight: 650; letter-spacing: .01em; }
+  .headline p { margin: 0; color: var(--muted); font-size: 12px; }
+  .tabs { display: flex; gap: 4px; }
+  .tab {
+    appearance: none; border: 0; background: transparent; cursor: pointer;
+    padding: 9px 14px 11px; font: inherit; font-size: 13px; color: var(--muted);
+    border-bottom: 2px solid transparent; border-radius: 8px 8px 0 0;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .tab:hover { color: var(--text); background: rgba(0,0,0,.03); }
+  .tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+  .tab small { font-size: 11px; color: var(--muted); font-weight: 400; }
+  main { max-width: 940px; margin: 24px auto 64px; padding: 0 24px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 28px 32px; min-height: 660px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.03), 0 12px 32px rgba(0,0,0,.04);
+  }
+  .pane { display: none; }
+  .pane[data-active="true"] { display: block; }
+  .hint { margin: 14px 2px 0; font-size: 12px; color: var(--muted); }
+  .hint code { background: rgba(0,0,0,.05); padding: 1px 5px; border-radius: 4px; }
+  .loading { color: var(--muted); font-size: 13px; padding: 40px 0; text-align: center; }
+  /* 让三个编辑器的容器都填满卡片 */
+  .pane > div { min-height: 600px; }
+  .bn-editor { padding-inline: 0 !important; }
+  .milkdown { background: transparent !important; }
+  .vditor { border: 0 !important; }
+</style>
+</head>
+<body>
+<header>
+  <div class="headline">
+    <h1>dsh-notes · 编辑器小样</h1>
+    <p>同一份 Markdown，三种编辑器 · 仅用于选型对比</p>
+  </div>
+  <div class="tabs" role="tablist" aria-label="编辑器">
+    <button class="tab" role="tab" aria-selected="true" data-target="blocknote">BlockNote <small>Notion 块 · 1.43 MB</small></button>
+    <button class="tab" role="tab" aria-selected="false" data-target="crepe">Milkdown Crepe <small>Markdown · 924 KB</small></button>
+    <button class="tab" role="tab" aria-selected="false" data-target="vditor">Vditor <small>Markdown · 74 KB</small></button>
+  </div>
+</header>
+<main>
+  <div class="card">
+    <section class="pane" data-pane="blocknote" data-active="true"><div class="loading">加载中…</div></section>
+    <section class="pane" data-pane="crepe"><div class="loading">加载中…</div></section>
+    <section class="pane" data-pane="vditor"><div class="loading">加载中…</div></section>
+  </div>
+  <p class="hint">体积为 esbuild minify + gzip 实测，已外置 React 时：BlockNote 含 Mantine 主题；Milkdown 为 Crepe 完整包；Vditor 为编辑器本体，图标/高亮资源按需加载。</p>
+  <p class="hint">切换标签时按需挂载，避免三个编辑器同时初始化。</p>
+</main>
+<script src="./assets/blocknote.js"></script>
+<script src="./assets/crepe.js"></script>
+<script src="./assets/vditor.js"></script>
+<script>
+  const mounts = {
+    blocknote: (el, md) => window.mountBlockNote(el, md),
+    crepe: (el, md) => window.mountCrepe(el, md),
+    vditor: (el, md) => window.mountVditor(el, md),
+  }
+  const mounted = new Set()
+  let sample = ''
+
+  async function getSample() {
+    if (!sample) sample = await (await fetch('./sample.md')).text()
+    return sample
+  }
+
+  async function activate(name) {
+    document.querySelectorAll('.tab').forEach((t) => {
+      t.setAttribute('aria-selected', String(t.dataset.target === name))
+    })
+    document.querySelectorAll('.pane').forEach((p) => {
+      p.dataset.active = String(p.dataset.pane === name)
+    })
+    if (mounted.has(name)) return
+    mounted.add(name)
+    const pane = document.querySelector(`.pane[data-pane="${name}"]`)
+    const el = pane.querySelector('div')
+    el.classList.remove('loading')
+    el.textContent = ''
+    try {
+      const md = await getSample()
+      mounts[name](el, md)
+    } catch (err) {
+      el.textContent = '加载失败：' + err.message
+      console.error(err)
+    }
+  }
+
+  document.querySelectorAll('.tab').forEach((tab) => {
+    tab.addEventListener('click', () => activate(tab.dataset.target))
+  })
+  const initial = new URLSearchParams(location.search).get('tab') || 'blocknote'
+  activate(initial)
+</script>
+</body>
+</html>

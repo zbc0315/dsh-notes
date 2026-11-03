@@ -1,0 +1,38 @@
+{
+  "meta": {
+    "title": "全部笔记本",
+    "description": "按工作区组织的 Markdown 笔记本：左侧栏统一入口、TipTap 富文本编辑、页面自动保存，Agent 可直接读写。"
+  },
+  "panel": {
+    "label": "全部笔记本",
+    "title": "全部笔记本"
+  },
+  "workspace": {
+    "current": "当前工作区",
+    "none": "未选择工作区",
+    "create": "新建笔记本",
+    "open": "打开笔记本",
+    "orphan": "游离"
+  },
+  "actions": {
+    "newNotebook": "新建笔记本",
+    "newPage": "新建页面",
+    "newChild": "新建子笔记本",
+    "rename": "重命名",
+    "delete": "删除",
+    "export": "导出 Markdown",
+    "search": "搜索",
+    "save": "保存",
+    "saved": "已保存",
+    "saving": "保存中…",
+    "conflict": "他处已修改",
+    "retry": "重试",
+    "empty": "还没有笔记本",
+    "emptyHint": "在左侧选中一个工作区，点「新建笔记本」开始。",
+    "noPage": "选一个页面开始编辑，或者新建一页。",
+    "untitled": "无标题",
+    "trash": "回收站",
+    "deleteConfirm": "删除后进入回收站，确认删除？",
+    "searchPlaceholder": "搜索标题与正文…"
+  }
+}

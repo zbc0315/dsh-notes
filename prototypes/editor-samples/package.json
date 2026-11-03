@@ -1,0 +1,21 @@
+{
+  "name": "dsh-notes-editor-samples",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "install:deps": "npm install --no-audit --no-fund",
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@blocknote/core": "^0.57.0",
+    "@blocknote/mantine": "^0.57.0",
+    "@blocknote/react": "^0.57.0",
+    "@milkdown/crepe": "^7.23.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "vditor": "^4.0.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.11"
+  }
+}

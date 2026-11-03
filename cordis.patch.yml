@@ -1,0 +1,13 @@
+# @tom2012/dsh-notes — bundle patch
+#
+# 本插件是 HOST-PLANE 行：宿主半用 ctx.webServer 注册同源路由 /-/notes/*
+# （复用 dsh-access-gate 的密码门与 connection 信任栅栏，不新开端口），
+# 用 ctx.tools 注册 notes_* Agent 工具，二者共用同一个 NotesStore。
+#
+# 客户端半经 package.json 的 dsh.client 声明为 web platform，注册
+# sidebar.panellist 的「全部笔记本」行（order 40，排在技能库之下）
+# 与 main 的 keyed 槽（key = notes）。卸载即自动消失，数据留在 ~/.dsh/notes。
+
+- insert:
+    - id: dsh-notes
+      name: '@tom2012/dsh-notes'
