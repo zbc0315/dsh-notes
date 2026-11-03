@@ -94,17 +94,41 @@ function briefPage(page) {
   }
 }
 
-/** `notes_read` 的页面视图（契约 §6：id/notebookId/title/rev/updatedAt/markdown/blocks）。 */
-function pageView(page) {
-  return {
+/** `notes_read` 的页面视图（契约 §6）。blocks 整篇太大，默认只给摘要。 */
+const BLOCKS_SUMMARY_LIMIT = 20
+
+/**
+ * 块摘要：`{ count, types, truncated }`。
+ *
+ * types 是块类型序列（最多 `BLOCKS_SUMMARY_LIMIT` 个），让模型知道文档结构，
+ * 又不至于把几十 KB 的 blocks JSON 塞进上下文；需要真块时显式传 includeBlocks。
+ */
+function blocksSummary(blocks) {
+  const list = Array.isArray(blocks) ? blocks : []
+  const types = list
+    .slice(0, BLOCKS_SUMMARY_LIMIT)
+    .map((block) => (block && typeof block.type === 'string' ? block.type : 'unknown'))
+  return { count: list.length, types, truncated: list.length > BLOCKS_SUMMARY_LIMIT }
+}
+
+/**
+ * `notes_read` 的页面视图。
+ *
+ * 默认：`{ id, notebookId, title, rev, updatedAt, markdown, blocksSummary }`；
+ * `includeBlocks: true` 时额外带完整 `blocks`。
+ */
+function pageView(page, includeBlocks) {
+  const view = {
     id: page.id,
     notebookId: page.notebookId,
     title: page.title,
     rev: page.rev,
     updatedAt: page.updatedAt,
     markdown: page.markdown,
-    blocks: page.blocks,
+    blocksSummary: blocksSummary(page.blocks),
   }
+  if (includeBlocks) view.blocks = page.blocks
+  return view
 }
 
 /* ------------------------------------------------------------------ *
@@ -191,8 +215,10 @@ function registerTools(ctx, store, options = {}) {
   tools.push(
     tool(
       'notes_read',
-      '按 pageId 或标题读取一篇笔记：markdown（导出镜像）与 blocks（BlockNote 块数组，真源）都给，' +
-        '并带 rev（保存时用作乐观锁）。同时给 notebookId 可以缩小标题查找范围。',
+      '按 pageId 或标题读取一篇笔记：markdown（Markdown 导出镜像，通常够用）+ rev（保存时用作乐观锁）' +
+        '+ blocksSummary（块数、块类型序列、是否截断）。' +
+        '默认**不返回**完整 blocks（整页 JSON 可能有几十 KB）；确实需要编辑块结构时传 includeBlocks=true。' +
+        '同时给 notebookId 可以缩小标题查找范围。',
       {
         pageId: {
           type: 'string',
@@ -206,11 +232,16 @@ function registerTools(ctx, store, options = {}) {
           type: 'string',
           description: '只在这个笔记本（含子笔记本）里按标题查找。',
         },
+        includeBlocks: {
+          type: 'boolean',
+          description: '为 true 时才返回完整 blocks（BlockNote 块数组，真源）；默认 false 只给 blocksSummary。',
+        },
       },
       async (args = {}) => {
+        const includeBlocks = args.includeBlocks === true
         if (args.pageId) {
           const page = await store.readPage(String(args.pageId))
-          return { ok: true, page: pageView(page) }
+          return { ok: true, page: pageView(page, includeBlocks) }
         }
         if (!args.title) throw new StoreError(400, '需要提供 pageId 或 title')
 
@@ -229,7 +260,7 @@ function registerTools(ctx, store, options = {}) {
         if (!target) throw new StoreError(404, `没有找到标题匹配「${args.title}」的页面`)
 
         const page = await store.readPage(target.id)
-        return { ok: true, page: pageView(page) }
+        return { ok: true, page: pageView(page, includeBlocks) }
       },
     ),
   )

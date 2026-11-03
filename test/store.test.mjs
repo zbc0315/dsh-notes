@@ -19,6 +19,7 @@ const { NotesStore, StoreError, normalizeWorkspacePath, plainText, DEFAULT_OPTIO
   '../src/host/store.js',
 )
 const { markdownToBlocks, blocksToMarkdown } = require('../src/host/markdown-blocks.js')
+const { registerTools } = require('../src/host/tools.js')
 
 /* ------------------------------------------------------------------ *
  * 脚手架
@@ -449,9 +450,11 @@ test('7. 外部新增 .json 被索引；只有 .md 的旧页迁移出 .json', as
   assert.equal(legacyRow.createdAt, Date.parse(iso))
   assert.ok(fs.existsSync(path.join(dir, 'p_z.json')), '迁移后应有 .json')
   const migrated = await store2.readPage('p_z')
-  assert.equal(migrated.markdown, '旧正文', '.md 镜像仍可读')
+  // 迁移后镜像归一成标准格式（frontmatter + blocksToMarkdown），内容不丢
+  assert.equal(migrated.markdown, '旧正文\n')
   assert.equal(migrated.blocks[0].type, 'paragraph')
   assert.equal(migrated.blocks[0].content[0].text, '旧正文')
+  assert.match(fs.readFileSync(path.join(dir, 'p_z.md'), 'utf8'), /^---\nid: p_z\ntitle: 旧页\n/)
 })
 
 /* ------------------------------------------------------------------ *
@@ -864,4 +867,144 @@ test('15. .json 解析失败 → init 跳过该页不抛错；createPage 可直�
   const created = await store.createPage({ notebookId: nb.id, title: '块页', blocks })
   assert.deepEqual(created.blocks, blocks, 'blocks 原样存取')
   assert.equal(created.markdown, '## 客户端标题\n')
+})
+
+/* ------------------------------------------------------------------ *
+ * 16. 镜像自愈：缺失 / 比 .json 旧 → 用 blocks 重写（不改 .json）
+ * ------------------------------------------------------------------ */
+
+test('16. init 自愈：.md 缺失或比 .json 旧 → 从 blocks 重写镜像，不动真源', async (t) => {
+  const { store, rootDir } = makeStore(t)
+  await store.init()
+  const nb = await store.createNotebook({ title: 'nb' })
+  const page = await store.createPage({ notebookId: nb.id, title: '页', markdown: '第一版' })
+  const detail = await store.readPage(page.id)
+  const mirrorPath = detail.path.replace(/\.json$/, '.md')
+
+  // 1) 镜像缺失：json 没变，init 也要补出来（不能被 index 的 mtime 短路跳过）
+  fs.rmSync(mirrorPath, { force: true })
+  const store2 = new NotesStore({ rootDir })
+  await store2.init()
+  assert.ok(fs.existsSync(mirrorPath), '缺失的镜像应被补回')
+  assert.equal(fs.readFileSync(mirrorPath, 'utf8').includes('第一版'), true)
+
+  // 2) 镜像比 json 旧（外部改了真源）：init 用 blocks 重写镜像，且 .json 逐字节不动
+  const parsed = JSON.parse(fs.readFileSync(detail.path, 'utf8'))
+  parsed.blocks = markdownToBlocks('外部新正文')
+  const rawJson = `${JSON.stringify(parsed, null, 2)}\n`
+  fs.writeFileSync(detail.path, rawJson, 'utf8')
+
+  const store3 = new NotesStore({ rootDir })
+  await store3.init()
+  assert.equal(fs.readFileSync(detail.path, 'utf8'), rawJson, '自愈只写 .md，不改 .json')
+  const healed = await store3.readPage(page.id)
+  assert.equal(healed.markdown, '外部新正文\n', '镜像已按 blocks 重写')
+  assert.equal(healed.blocks[0].content[0].text, '外部新正文')
+
+  // 自愈后再次 init 不应再改写（mtime 已对齐，不会把自产镜像当外部改动）
+  const before = fs.statSync(mirrorPath).mtimeMs
+  const beforeBody = fs.readFileSync(mirrorPath, 'utf8')
+  const store4 = new NotesStore({ rootDir })
+  await store4.init()
+  assert.equal(fs.readFileSync(mirrorPath, 'utf8'), beforeBody)
+  assert.equal(fs.statSync(mirrorPath).mtimeMs, before)
+  assert.equal(
+    fs.readdirSync(path.dirname(mirrorPath)).some((name) => name.includes('.md.external-')),
+    false,
+    '自产镜像不应被当成外部改动备份',
+  )
+})
+
+/* ------------------------------------------------------------------ *
+ * 17. 镜像被外部手改：先备份 .md.external-<ts>，再从 blocks 重写
+ * ------------------------------------------------------------------ */
+
+test('17. .md 比 .json 新（手改镜像）→ 备份 .md.external-<ts> 再重写', async (t) => {
+  const { store, rootDir } = makeStore(t)
+  await store.init()
+  const nb = await store.createNotebook({ title: 'nb' })
+  const page = await store.createPage({ notebookId: nb.id, title: '页', markdown: '真源正文' })
+  const detail = await store.readPage(page.id)
+  const mirrorPath = detail.path.replace(/\.json$/, '.md')
+  const rawJson = fs.readFileSync(detail.path, 'utf8')
+
+  // 有人手改了镜像（内容与真源不一致，mtime 比 json 新）
+  const manual = '手工编辑的镜像\n'
+  fs.writeFileSync(mirrorPath, manual, 'utf8')
+
+  const store2 = new NotesStore({ rootDir })
+  await store2.init() // 不抛错
+
+  const dir = path.dirname(mirrorPath)
+  const backups = fs.readdirSync(dir).filter((name) => name.startsWith(`${page.id}.md.external-`))
+  assert.equal(backups.length, 1, '手改的镜像应留一份备份')
+  assert.equal(fs.readFileSync(path.join(dir, backups[0]), 'utf8'), manual, '备份内容 = 手改后的原文')
+
+  // 镜像按真源重写；.json 不动；备份不进索引
+  assert.equal(fs.readFileSync(mirrorPath, 'utf8').includes('真源正文'), true)
+  assert.equal(fs.readFileSync(detail.path, 'utf8'), rawJson, '.json 不应被改动')
+  assert.equal(store2.tree().pages.length, 1, '备份文件不是页面')
+  assert.equal((await store2.readPage(page.id)).markdown, '真源正文\n')
+})
+
+/* ------------------------------------------------------------------ *
+ * 18. notes_read：默认只给 blocksSummary，includeBlocks 才给整篇 blocks
+ * ------------------------------------------------------------------ */
+
+/** 最小的假插件上下文（够 registerTools 用）。 */
+function makeToolsCtx() {
+  const registered = []
+  return {
+    registered,
+    tools: {
+      register: (item) => {
+        registered.push(item)
+        return () => {}
+      },
+    },
+    effect: (fn) => fn(),
+  }
+}
+
+test('18. notes_read 默认不给 blocks（只给 blocksSummary），includeBlocks=true 才给', async (t) => {
+  const { store } = makeStore(t)
+  await store.init()
+  const nb = await store.createNotebook({ title: 'nb' })
+  const page = await store.createPage({ notebookId: nb.id, title: '页', markdown: '# 标题\n\n- 甲\n- 乙' })
+
+  const ctx = makeToolsCtx()
+  registerTools(ctx, store)
+  const read = ctx.registered.find((item) => item.name === 'notes_read')
+  assert.ok(read, '注册了 notes_read')
+
+  // 默认：没有 blocks 字段，只有摘要
+  const brief = await read.execute({ pageId: page.id })
+  assert.equal(brief.ok, true)
+  assert.equal('blocks' in brief.page, false, '默认不应返回整篇 blocks')
+  assert.deepEqual(brief.page.blocksSummary, {
+    count: 3,
+    types: ['heading', 'bulletListItem', 'bulletListItem'],
+    truncated: false,
+  })
+  assert.equal(brief.page.id, page.id)
+  assert.equal(brief.page.rev, 1)
+  assert.ok(brief.page.markdown.includes('# 标题'))
+
+  // 显式要真块
+  const full = await read.execute({ pageId: page.id, includeBlocks: true })
+  assert.ok(Array.isArray(full.page.blocks), 'includeBlocks=true 时应有 blocks')
+  assert.equal(full.page.blocks.length, 3)
+  assert.equal(full.page.blocks[0].type, 'heading')
+
+  // 超过 20 个块 → types 截断并置 truncated
+  const many = await store.createPage({
+    notebookId: nb.id,
+    title: '多块',
+    blocks: Array.from({ length: 25 }, () => para('x')),
+  })
+  const summarized = await read.execute({ pageId: many.id })
+  assert.equal(summarized.page.blocksSummary.count, 25)
+  assert.equal(summarized.page.blocksSummary.types.length, 20)
+  assert.equal(summarized.page.blocksSummary.truncated, true)
+  assert.equal('blocks' in summarized.page, false)
 })

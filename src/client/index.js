@@ -8,8 +8,12 @@
  *   3. `sidebar.workspaces.session.menu.item` 会话 "…" 菜单里的「新建/打开笔记本」
  *      （方案 C 的 P1：对**该会话所属工作区**操作，不必先切面板）。
  *
- * 面板行的 label 传 { zh, en } 映射：宿主的 resolveSlotLabel 按当前语言解析，
- * 且 dsh-client-ui-sidebar 订阅了 locale 变化，所以切语言会即时更新。
+ * 面板行的 label **不能是 { zh, en } 对象**：宿主的 resolveSlotLabel 只有
+ * `typeof label === 'function' ? label() : label` 这一层，对象会被原样交给 React
+ * 当子元素渲染（React #31），整个 sidebar 槽会崩成空白竖条（2026-11-03 实测）。
+ *
+ * 但可以传**函数**：宿主在 `ctx.locale.subscribe(...)` 时会对每个入口重新调用
+ * resolveSlotLabel，所以 `() => dict().label` 既安全、又能跟着语言实时切换。
  *
  * 不 import 任何 @deepseek-ai/* 包：react 由 ModuleLoader 的 platform 表提供，
  * BlockNote（含 ProseMirror / Mantine）全部打进独立的 client/editor.js，面板打开才加载。
@@ -24,6 +28,7 @@ import { NotesApp } from './app.js'
 import { providePlatformModules } from './blocknote-runtime.js'
 import { PanelIcon } from './icons.js'
 import { SessionNotesMenuItem } from './session-menu.js'
+import { dict } from './i18n.js'
 import { installStyles } from './styles.js'
 
 export const inject = ['slots']
@@ -46,7 +51,7 @@ export function apply(ctx) {
         name: 'sidebar.panellist',
         id: 'notes',
         order: 40,
-        label: { zh: '全部笔记本', en: 'All notebooks' },
+        label: () => dict().label,
       },
       PanelIcon,
     ),
@@ -62,7 +67,7 @@ export function apply(ctx) {
         name: 'sidebar.workspaces.session.menu.item',
         id: 'notes',
         order: 300,
-        label: { zh: '新建/打开笔记本', en: 'New/Open notebook' },
+        label: () => dict().createNotebook,
       },
       (props) => <SessionNotesMenuItem ctx={ctx} sessionId={props && props.sessionId} />,
     ),

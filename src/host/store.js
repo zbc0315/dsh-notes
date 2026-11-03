@@ -44,6 +44,14 @@ const ID_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyz'
 /** sha256 的合法形态：64 位小写 hex。 */
 const SHA_RE = /^[0-9a-f]{64}$/
 
+/**
+ * 镜像 mtime 与 `.json` mtime 的比较容差（毫秒）。
+ *
+ * 保存时会把 `.md` 的 mtime 对齐到 `.json`（见 `_syncMirrorMtime`），但文件系统
+ * 精度可能差不到 1ms，所以这里留 2ms：小于 = 镜像陈旧，大于 = 有人手改过镜像。
+ */
+const MIRROR_MTIME_TOLERANCE_MS = 2
+
 const DEFAULT_OPTIONS = Object.freeze({
   // 数据根；trashDir 为 null 时取 `<rootDir>/.trash`
   rootDir: path.join(os.homedir(), '.dsh', 'notes'),
@@ -488,6 +496,10 @@ class NotesStore {
       ? Number(opts.maxAssetBytes)
       : DEFAULT_OPTIONS.maxAssetBytes
 
+    // 非致命错误（镜像自愈失败等）只提示、不中断：注入的 warn 优先，否则打到 console。
+    this._warn =
+      typeof opts.warn === 'function' ? opts.warn : (msg) => console.warn(`[dsh-notes] ${msg}`)
+
     // 内存索引（真源的缓存视图）
     this._notebooks = []
     this._pages = []
@@ -662,11 +674,13 @@ class NotesStore {
         const title = cleanName(parsed.data.title, pageId)
         const tags = Array.isArray(parsed.data.tags) ? parsed.data.tags : []
         const blocks = markdownToBlocks(parsed.body)
+        const meta = { id: pageId, title, created, updated, tags }
+        // 迁移后把 .md 归一成标准镜像（frontmatter + blocksToMarkdown），并让 mtime 与 .json 对齐。
         try {
-          await writeFileAtomic(
-            path.join(dir, `${pageId}.json`),
-            buildPageJson({ id: pageId, title, created, updated, tags }, blocks),
-          )
+          await writeFileAtomic(path.join(dir, `${pageId}.json`), buildPageJson(meta, blocks))
+          await writeFileAtomic(mdFile, buildMirrorFile(meta, blocksToMarkdown(blocks)))
+          const jsonStat = await fsp.stat(path.join(dir, `${pageId}.json`))
+          await this._syncMirrorMtime(mdFile, jsonStat)
         } catch {
           continue // 迁移失败就当这页不存在，下次 init 再试
         }
@@ -687,11 +701,29 @@ class NotesStore {
           continue
         }
 
+        const mirrorFile = path.join(dir, `${pageId}.md`)
+        let mirrorStat = null
+        try {
+          mirrorStat = await fsp.stat(mirrorFile)
+        } catch (err) {
+          if (err && err.code !== 'ENOENT') this._warn(`读取镜像状态失败 ${mirrorFile}: ${err.message || err}`)
+          mirrorStat = null
+        }
+        // 镜像状态：缺失 / 比真源旧 = 自愈；比真源新 = 有人手改了镜像，先备份再重写。
+        const mirrorState =
+          mirrorStat === null
+            ? 'missing'
+            : mirrorStat.mtimeMs < stat.mtimeMs - MIRROR_MTIME_TOLERANCE_MS
+              ? 'stale'
+              : mirrorStat.mtimeMs > stat.mtimeMs + MIRROR_MTIME_TOLERANCE_MS
+                ? 'external'
+                : 'ok'
+
         const row = pageMap.get(pageId)
         const sameFile = row && row.notebookId === name && row.mtimeMs === stat.mtimeMs
-        if (sameFile) {
+        if (sameFile && mirrorState === 'ok') {
           seenPages.add(pageId)
-          continue // 索引记录与磁盘一致，不读文件
+          continue // 索引记录与磁盘一致，且镜像正常，不读文件
         }
 
         let raw = ''
@@ -707,8 +739,29 @@ class NotesStore {
         const created = toMs(parsed.created, (row && row.createdAt) ?? stat.birthtimeMs ?? stat.mtimeMs)
         const updated = toMs(parsed.updated, row ? row.updatedAt ?? stat.mtimeMs : stat.mtimeMs)
         const title = cleanName(parsed.title, row ? row.title : pageId)
-        const mirror = await this._readMirror(path.join(dir, `${pageId}.md`))
-        const markdown = mirror === null ? blocksToMarkdown(parsed.blocks) : mirror
+        // 镜像的权威内容永远由 blocks 生成（真源是 .json）。
+        const markdown = blocksToMarkdown(parsed.blocks)
+
+        if (mirrorState !== 'ok') {
+          const meta = { id: pageId, title: title || pageId, created, updated, tags: parsed.tags }
+          if (mirrorState === 'external') {
+            // JSON 是真源，但用户手改镜像的痕迹不能静默丢：先整份备份。
+            const backup = path.join(dir, `${pageId}.md.external-${Date.now()}`)
+            try {
+              await fsp.copyFile(mirrorFile, backup)
+            } catch (err) {
+              this._warn(`备份外部改动的镜像失败 ${mirrorFile}: ${err.message || err}`)
+            }
+          }
+          try {
+            await writeFileAtomic(mirrorFile, buildMirrorFile(meta, markdown))
+            await this._syncMirrorMtime(mirrorFile, stat)
+          } catch (err) {
+            // 自愈失败不影响索引：这次先用生成的内容喂搜索，下次 init 再试。
+            this._warn(`镜像自愈失败 ${mirrorFile}: ${err.message || err}`)
+          }
+        }
+
         const nextRow = {
           id: pageId,
           notebookId: name,
@@ -941,6 +994,22 @@ class NotesStore {
   }
 
   /**
+   * 把镜像的 mtime 对齐到 `.json` 的 mtime。
+   *
+   * 这样 `_reconcile` 才能用 mtime 判断「镜像是我们自己写的（相等）」「json 更新了
+   * （镜像陈旧）」「有人手改了镜像（镜像更新）」，而不会把我们刚写的镜像误判成外部改动。
+   * 失败只是少了一次自愈判据，warn 后继续。
+   */
+  async _syncMirrorMtime(mirrorFile, jsonStat) {
+    if (!jsonStat) return
+    try {
+      await fsp.utimes(mirrorFile, jsonStat.atime, jsonStat.mtime)
+    } catch (err) {
+      this._warn(`对齐镜像 mtime 失败 ${mirrorFile}: ${(err && err.message) || err}`)
+    }
+  }
+
+  /**
    * 读取磁盘上的页面现状。
    *
    *  - `.json` 是真源，`blocks` 从它读；
@@ -1113,6 +1182,7 @@ class NotesStore {
       await writeFileAtomic(file, buildPageJson(meta, blocks))
       await writeFileAtomic(this._mirrorFile(notebookId, id), buildMirrorFile(meta, markdown))
       const stat = await fsp.stat(file)
+      await this._syncMirrorMtime(this._mirrorFile(notebookId, id), stat)
       row.mtimeMs = stat.mtimeMs
 
       this._pages.push(row)
@@ -1199,6 +1269,7 @@ class NotesStore {
       await writeFileAtomic(disk.file, buildPageJson(meta, nextBlocks))
       await writeFileAtomic(disk.mirrorFile, buildMirrorFile(meta, nextMarkdown))
       const stat = await fsp.stat(disk.file)
+      await this._syncMirrorMtime(disk.mirrorFile, stat)
       nextRow.mtimeMs = stat.mtimeMs
 
       this._replacePage(nextRow)
@@ -1241,6 +1312,7 @@ class NotesStore {
       await writeFileAtomic(disk.file, buildPageJson(meta, nextBlocks))
       await writeFileAtomic(disk.mirrorFile, buildMirrorFile(meta, nextMarkdown))
       const stat = await fsp.stat(disk.file)
+      await this._syncMirrorMtime(disk.mirrorFile, stat)
       nextRow.mtimeMs = stat.mtimeMs
       this._replacePage(nextRow)
       this._tags.set(row.id, tags)
@@ -1589,6 +1661,7 @@ class NotesStore {
       await writeFileAtomic(disk.file, buildPageJson(meta, blocks))
       await writeFileAtomic(disk.mirrorFile, buildMirrorFile(meta, markdown))
       const stat = await fsp.stat(disk.file)
+      await this._syncMirrorMtime(disk.mirrorFile, stat)
       const nextRow = {
         ...row,
         title: nextTitle,

@@ -53,6 +53,8 @@ async function apply(ctx, config) {
     rootDir: options.rootDir,
     maxPageBytes: options.maxPageBytes,
     maxAssetBytes: options.maxAssetBytes,
+    // 镜像自愈（.md 比 .json 旧就重写、被手改就备份）失败时走这里
+    warn,
   })
 
   try {

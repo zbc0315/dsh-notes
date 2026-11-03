@@ -331,7 +331,14 @@ async function main() {
   ok(JSON.stringify(listed).includes(notebook.id), 'notes_list 看得到 UI 建的笔记本')
   const readByTool = await byName.get('notes_read').execute({ pageId: page.id })
   ok(JSON.stringify(readByTool).includes('外部改之后的覆盖'), 'notes_read 读到 UI 保存的正文')
-  ok(JSON.stringify(readByTool).includes('"blocks"'), 'notes_read 返回 blocks')
+  const readToolJson = JSON.stringify(readByTool)
+  ok(
+    readToolJson.includes('blocksSummary') && !readToolJson.includes('"blocks":'),
+    'notes_read 默认只给 blocksSummary（不塞整篇 blocks）',
+  )
+  ok(readToolJson.includes('"types"'), 'blocksSummary 带类型序列')
+  const withBlocks = await byName.get('notes_read').execute({ pageId: page.id, includeBlocks: true })
+  ok(JSON.stringify(withBlocks).includes('"blocks"'), 'notes_read includeBlocks=true 时返回 blocks')
 
   const created = await byName.get('notes_create_page').execute({ notebookId: notebook.id, title: '工具建的页' })
   const createdId = created.page ? created.page.id : created.id

@@ -301,7 +301,13 @@ async function main() {
   ok(menuReg !== undefined, '注册了会话菜单项')
   eq(panelReg.options.id, 'notes', '面板 id = notes')
   eq(panelReg.options.order, 40, '面板 order = 40（排在技能库 35 之后）')
-  eq(panelReg.options.label, { zh: '全部笔记本', en: 'All notebooks' }, '面板 label 带中英映射')
+  // 宿主的 resolveSlotLabel 只认字符串或函数；对象会直接喂给 React → #31 崩溃。
+  ok(typeof panelReg.options.label === 'function', '面板 label 是函数（宿主会重新求值，且不会把对象交给 React）')
+  win.document.documentElement.lang = 'zh-CN'
+  eq(panelReg.options.label(), '全部笔记本', '中文环境下 label 求值正确')
+  win.document.documentElement.lang = 'en'
+  eq(panelReg.options.label(), 'All notebooks', '英文环境下 label 求值正确（切语言会实时刷新）')
+  win.document.documentElement.lang = 'zh-CN'
   eq(mainReg.options.key, 'notes', 'main 槽 key = notes')
 
   const { renderToStaticMarkup } = require('react-dom/server')
