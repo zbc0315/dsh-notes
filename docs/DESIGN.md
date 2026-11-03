@@ -217,6 +217,15 @@ dsh-notes/
 - Client 依赖 React 仅从宿主模块表 `require('react')`；BlockNote、ProseMirror、Mantine 主题全部打进 `bundle.js`（esbuild，`external: ['react','react-dom']`）。
 - 只用 `--dsw-alias-*` 主题令牌；控件自写，不 import DSH Client 包。
 
+### 5.1.1 槽注册的两条硬约束（2026-11-03 实测踩坑）
+
+1. **`label` 只能是字符串或函数**。宿主 `resolveSlotLabel` 只做 `typeof label === 'function' ? label() : label`，对象会被原样交给 React 当子元素渲染 → React #31，**整个 sidebar 槽崩成空白竖条**。要跟随语言用 `() => dict().label`，不要传 `{ zh, en }`。
+2. **没有 label 消费者的槽不要传 `label`**。例如 `sidebar.workspaces.session.menu.item`，菜单文案由组件自己渲染；传函数/对象同样可能被当 React child。
+
+### 5.1.2 Host 路由的注册约束
+
+`ctx.effect(() => webServer.register({...}))` **必须 `return` register 返回的 disposer**。插件在 install / 热重载时会重新 apply：旧路由若泄漏，会继续指向已释放的 `ctx`（每次请求在 `ctx.connection` 处抛错 → 503）；同路径重复注册还会直接抛 duplicate，导致新上下文中断（工具不再注册）。详见 `test/routes-lifecycle.test.mjs`。
+
 ### 5.2 路由（v0.1）
 
 | 方法 | 路径 | 说明 |
