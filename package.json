@@ -46,7 +46,7 @@
     "check": "node --check src/host/index.js && node --check src/host/store.js && node --check src/host/routes.js && node --check src/host/tools.js && node --check src/host/markdown-blocks.js",
     "selftest": "node test/selftest.mjs",
     "smoke": "node test/client-smoke.mjs",
-    "test": "npm run build && npm run check && npm run selftest && npm run smoke && node --test test/markdown-blocks.test.mjs test/store.test.mjs"
+    "test": "npm run build && npm run check && npm run selftest && npm run smoke && node --test test/markdown-blocks.test.mjs test/store.test.mjs test/routes-lifecycle.test.mjs"
   },
   "publishConfig": {
     "access": "public",

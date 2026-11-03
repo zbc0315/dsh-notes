@@ -173,7 +173,10 @@ function registerRoutes(ctx, store, options = {}) {
   }
 
   ctx.effect(() => {
-    webServer.register({
+    // 必须把 register 返回的 disposer 交回 effect：插件 install / 热重载时会重新 apply，
+    // 旧路由若留在宿主上，会继续指向已释放的 ctx —— 每次请求在 ctx.connection 处抛错，
+    // 客户端只看到 503「宿主连接服务不可用」；而重复注册同路径会直接抛 duplicate。
+    return webServer.register({
       kind: 'prefix',
       path: API_PREFIX,
       handler: async (req, res) => {
