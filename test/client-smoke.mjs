@@ -310,6 +310,19 @@ async function main() {
   win.document.documentElement.lang = 'zh-CN'
   eq(mainReg.options.key, 'notes', 'main 槽 key = notes')
 
+  section('2b. 槽契约：label 只能是字符串或函数')
+  for (const reg of registrations) {
+    const label = reg.options.label
+    const name = reg.options.name
+    // keyed 槽（main）本来就不带 label
+    if (label === undefined) continue
+    // 宿主的 resolveSlotLabel 只有 `typeof label === 'function' ? label() : label`，
+    // 对象会被原样交给 React 当子元素 → React #31，整条侧栏崩掉。
+    ok(typeof label === 'string' || typeof label === 'function', `${name} 的 label 类型安全（非对象）`)
+    const resolved = typeof label === 'function' ? label() : label
+    ok(typeof resolved === 'string' && resolved.length > 0, `${name} 求值后是非空字符串`)
+  }
+
   const { renderToStaticMarkup } = require('react-dom/server')
   ok(renderToStaticMarkup(React.createElement(panelReg.component)).startsWith('<svg'), '面板图标是内联 SVG')
 
