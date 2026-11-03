@@ -3,3 +3,7 @@ client/*.map
 .DS_Store
 *.log
 test/.tmp
+
+# 编辑器小样的构建产物（npm run build 可再生）
+prototypes/**/public/assets/
+prototypes/**/public/vditor/
