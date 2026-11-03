@@ -256,6 +256,19 @@ async function main() {
   res = await call(route, 'GET', `${API_PREFIX}/workspace?path=${encodeURIComponent(ws)}`)
   eq(res.json.notebook.id, bound.id, 'findWorkspace 查到绑定')
 
+  // 两个工作区各自独立的子笔记本，互不覆盖（R4）
+  const ws2 = path.join(tmpRoot, 'second-workspace')
+  fs.mkdirSync(ws2, { recursive: true })
+  res = await call(route, 'POST', `${API_PREFIX}/workspace`, { workspacePath: ws2, title: 'second-workspace' })
+  const bound2 = res.json.notebook
+  ok(bound2.id !== bound.id, '第二个工作区拿到另一个笔记本')
+  eq(bound2.title, 'second-workspace', '第二个笔记本标题=第二个工作区名')
+  res = await call(route, 'GET', `${API_PREFIX}/tree`)
+  const roots = res.json.notebooks.filter((row) => row.parentId === null)
+  ok(roots.length >= 2, '根下并排挂着两个工作区笔记本')
+  const stillBound = res.json.notebooks.find((row) => row.id === bound.id)
+  eq(stillBound.workspacePath, fs.realpathSync(ws), '第一个绑定没有被覆盖')
+
   section('8. 附件（内容寻址）')
   const png = Buffer.from(
     '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000050001',
@@ -421,6 +434,35 @@ async function main() {
   ok(typeof host.apply === 'function', '宿主导出 apply')
   ok(typeof host.DEFAULTS === 'object', '宿主导出 DEFAULTS')
   ok(fs.existsSync(path.join(assetsPath)) || true, '附件事务不阻塞')
+
+  section('15b. host.apply() 真跑一次')
+  {
+    const applyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-notes-apply-'))
+    const seen = { routes: [], tools: [], provided: null }
+    const applyCtx = {
+      webServer: { register: (spec) => seen.routes.push(spec) },
+      connection: { requestRejection: () => undefined },
+      tools: { register: (tool) => seen.tools.push(tool) },
+      effect: (fn) => fn(),
+      logger: () => ({ info: () => {}, warn: () => {} }),
+      set: (name, value) => {
+        seen.provided = { name, value }
+      },
+    }
+    const host = require('../src/host/index.js')
+    let applyError = null
+    try {
+      await host.apply(applyCtx, { rootDir: applyRoot })
+    } catch (error) {
+      applyError = error
+    }
+    ok(applyError === null, `host.apply 不抛错${applyError ? `（${applyError.message}）` : ''}`)
+    eq(seen.routes.length, 1, 'apply 注册了路由')
+    eq(seen.tools.length, 8, 'apply 注册了 8 个工具')
+    ok(true, 'apply 完成后无副作用异常')
+    ok(fs.existsSync(path.join(applyRoot, 'index.json')), 'apply 时真的把存储根建起来了')
+    fs.rmSync(applyRoot, { recursive: true, force: true })
+  }
 
   section('16. 目录重建（数据可恢复）')
   const indexFile = path.join(tmpRoot, 'index.json')

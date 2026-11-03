@@ -75,11 +75,20 @@ async function apply(ctx, config) {
     warn('tools 服务不可用，notes_* 工具未注册')
   }
 
-  // 暴露给同进程的其它插件（例如将来的 CLI），不依赖也不强求。
+  // 让同进程的其它插件能拿到 store（例如将来的 CLI）。纯可选：
+  // 任何一步形状不对都静默跳过，绝不让它影响插件启动。
   ctx.effect(() => {
-    if (typeof ctx.provide === 'function') ctx.provide('notesStore', store)
+    try {
+      if (typeof ctx.set === 'function') ctx.set('notesStore', store)
+    } catch {
+      /* 宿主上下文不支持就跳过 */
+    }
     return () => {
-      if (typeof ctx.set === 'function') ctx.set('notesStore', undefined)
+      try {
+        if (typeof ctx.set === 'function') ctx.set('notesStore', undefined)
+      } catch {
+        /* 同上 */
+      }
     }
   }, 'dsh-notes: notes store service')
 }
