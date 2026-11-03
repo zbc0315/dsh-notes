@@ -67,7 +67,8 @@ export function apply(ctx) {
         name: 'sidebar.workspaces.session.menu.item',
         id: 'notes',
         order: 300,
-        label: () => dict().createNotebook,
+        // 菜单项自己渲染文案（组件里），这里不给 label：
+        // 该槽的 label 没有消费者，而函数/对象都可能被当 React child 渲染。
       },
       (props) => <SessionNotesMenuItem ctx={ctx} sessionId={props && props.sessionId} />,
     ),
