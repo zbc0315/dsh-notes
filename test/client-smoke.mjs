@@ -313,7 +313,7 @@ async function main() {
   const panelReg = registrations.find((item) => item.options.name === 'sidebar.panellist')
   const mainReg = registrations.find((item) => item.options.name === 'main')
   const menuReg = registrations.find((item) => item.options.name === 'sidebar.workspaces.session.menu.item')
-  ok(panelReg !== undefined, '注册了 sidebar.panellist')
+  ok(panelReg === undefined, '左侧不再注册「全部笔记本」入口')
 
   const rightType = rightTabTypes.find((item) => item.kind === 'notes')
   ok(rightType !== undefined, '注册了右侧 notes 标签类型')
@@ -322,14 +322,11 @@ async function main() {
   ok(rightBody !== undefined && rightBody.options.key === 'dsh-notes', '右侧标签内容注册在类型 id 下')
   ok(mainReg !== undefined, '注册了 main')
   ok(menuReg !== undefined, '注册了会话菜单项')
-  eq(panelReg.options.id, 'notes', '面板 id = notes')
-  eq(panelReg.options.order, 40, '面板 order = 40（排在技能库 35 之后）')
-  // 宿主的 resolveSlotLabel 只认字符串或函数；对象会直接喂给 React → #31 崩溃。
-  ok(typeof panelReg.options.label === 'function', '面板 label 是函数（宿主会重新求值，且不会把对象交给 React）')
+  // 右侧 guide 的 title 也是 thunk：切语言要跟着变。
   win.document.documentElement.lang = 'zh-CN'
-  eq(panelReg.options.label(), '全部笔记本', '中文环境下 label 求值正确')
+  eq(rightType.guide[0].title(), '全部笔记本', '中文 guide 标题正确')
   win.document.documentElement.lang = 'en'
-  eq(panelReg.options.label(), 'All notebooks', '英文环境下 label 求值正确（切语言会实时刷新）')
+  eq(rightType.guide[0].title(), 'All notebooks', '英文 guide 标题正确（切语言实时刷新）')
   win.document.documentElement.lang = 'zh-CN'
   eq(mainReg.options.key, 'notes', 'main 槽 key = notes')
 
@@ -345,9 +342,6 @@ async function main() {
     const resolved = typeof label === 'function' ? label() : label
     ok(typeof resolved === 'string' && resolved.length > 0, `${name} 求值后是非空字符串`)
   }
-
-  const { renderToStaticMarkup } = require('react-dom/server')
-  ok(renderToStaticMarkup(React.createElement(panelReg.component)).startsWith('<svg'), '面板图标是内联 SVG')
 
   section('3. 渲染 app（有工作区、还没有笔记本）')
   const container = win.document.getElementById('root')

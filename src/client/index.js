@@ -1,12 +1,14 @@
 /**
  * @tom2012/dsh-notes — Client half
  *
- * 注册三样东西（DESIGN.md §5）：
- *   1. `sidebar.panellist` 加一行「全部笔记本」，order 40 ——
- *      排在 插件(0) / 记忆(5) / 自动化任务(10) / 技能库(35) 之后；
- *   2. `main` 的 keyed 槽注册 key="notes"，承载整块笔记本 UI；
- *   3. `sidebar.workspaces.session.menu.item` 会话 "…" 菜单里的「新建/打开笔记本」
- *      （方案 C 的 P1：对**该会话所属工作区**操作，不必先切面板）。
+ * 两个入口（用户原始需求）：
+ *   1. 左侧边栏：工作区级「新建笔记本 / 打开笔记本」——
+ *      `sidebar.workspaces.session.menu.item`（按该会话所属工作区建/开）；
+ *   2. 右侧边栏：「全部笔记本」统一入口 ——
+ *      `sidebarRightTabs` 的 notes 标签页类型 + `sidebar.right.pane.tab` 内容。
+ *
+ * 另外注册 `main` 的 keyed 槽（key="notes"），承载完整笔记本 UI。
+ * **左侧不再有「全部笔记本」入口**：左侧只负责工作区级动作。
  *
  * 面板行的 label **不能是 { zh, en } 对象**：宿主的 resolveSlotLabel 只有
  * `typeof label === 'function' ? label() : label` 这一层，对象会被原样交给 React
@@ -26,7 +28,6 @@ import * as ReactDOMClient from 'react-dom/client'
 
 import { NotesApp } from './app.js'
 import { providePlatformModules } from './blocknote-runtime.js'
-import { PanelIcon } from './icons.js'
 import { NotesRightPanel } from './right-panel.js'
 import { SessionNotesMenuItem } from './session-menu.js'
 import { dict } from './i18n.js'
@@ -45,18 +46,6 @@ export function apply(ctx) {
     'react-dom': ReactDOM,
     'react-dom/client': ReactDOMClient,
   })
-
-  ctx.slots.inject('sidebar.panellist', () =>
-    ctx.slots.register(
-      {
-        name: 'sidebar.panellist',
-        id: 'notes',
-        order: 40,
-        label: () => dict().label,
-      },
-      PanelIcon,
-    ),
-  )
 
   ctx.slots.inject('main', () =>
     ctx.slots.register({ name: 'main', key: 'notes' }, () => <NotesApp ctx={ctx} />),
