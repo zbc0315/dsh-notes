@@ -9,7 +9,7 @@
  *   · `sidebar.right.pane.tab` 用同一个 id 注册标签内容。
  *
  * 右侧栏只有 300–420px，塞不下完整编辑器，所以这里做「目录 + 跳转」：
- * 点任意笔记本会在主面板（key=notes）里打开它，并带上 intent 选中。
+ * 点任意笔记本会在主面板的全局视图（key=notes-all）里打开它，并带上 intent 选中。
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'

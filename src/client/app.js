@@ -158,7 +158,7 @@ export function NotesApp({ ctx, autoCreate = true }) {
   }, [refresh])
 
   // 从左侧「笔记本」行打开主面板时：当前工作区还没有笔记本就自动建一个（根层级、以工作区名命名）。
-  // 右侧「全部笔记本」进入时会置 suppress，避免误建。
+  // 右侧「全部笔记本」进入的是全局视图（key=notes-all，autoCreate=false），不会走到这里。
   // 创建后直接并入当前树（不依赖可能被替换的实例的 refresh），保证面板立刻看得到。
   const autoCreated = useRef(false)
   useEffect(() => {

@@ -1,7 +1,7 @@
 # dsh-notes 修复方案 v1（待审核）
 
 - 日期：2026-11-04
-- 状态：**Step 0 通过；M1–M4 第二轮复核 FAIL 的问题已修，待复核**
+- 状态：**最终验收：功能项全部 PASS；仅文档一致性 FAIL，已修正（2026-11-04 23:0x）**
 - 依据：用户的原始需求 + 2026-11-04 真实浏览器实测（不是 jsdom）
 
 ---
@@ -11,7 +11,7 @@
 | 观察 | 证据 |
 | --- | --- |
 | 左侧栏没有笔记本入口 | 真实页面 `document.querySelectorAll('.n-rowaction')` 有 2 个（会话行悬停按钮），但主面板打不开 |
-| 主面板打不开 | console：`slot entry crashed in 'main': TypeError: f is not a function`；`layout.selectPanel('notes')` 依赖 `sidebar.panellist` 的面板身份 |
+| 主面板打不开 | console：`slot entry crashed in 'main': TypeError: f is not a function`；后续定位是 NotesApp 里的 BlockNote/Mantine 渲染崩溃（不是面板身份问题），见 Step 0 结果 |
 | 浮层版本也崩 | 改用 `shell.overlay` 后，点开会话行按钮 → `slot entry crashed in 'shell.overlay': TypeError: f is not a function`（React Context.Consumer children 不是函数） |
 | 之前的“已修好”未生效 | 客户端 bundle 有缓存：改完立即 reload 仍是旧包，等待约 8s 后 reload 才拿到新包；我没有在每次修改后验证加载版本 |
 | 右侧面板是半成品 | 只有列表；空态文案还指向一个不存在的左侧按钮；没有新建动作 |
@@ -45,7 +45,7 @@
 **按用户 2026-11-04 的澄清改为 B**：
 
 - **左侧入口由左侧面板承载**：`sidebar.panellist` 一行「笔记本」，作用于**当前工作区**——没有就以工作区名在根层级建，已有就打开；行文案在「新建笔记本 / 打开笔记本」之间切换。
-- **右侧全局入口**：右栏 `notes` 标签页 + 「全部笔记本」guide 入口，点开直接进**主面板**（`main`，key=`notes`），显示全部笔记本。
+- **右侧全局入口**：右栏 `notes` 标签页 + 「全部笔记本」guide 入口，点开直接进**主面板全局视图**（`main`，key=`notes-all`），显示全部笔记本；全局视图不会自动建笔记本。
 
 ---
 
@@ -61,18 +61,18 @@
 ### 3.2 右侧（全局入口 → 主面板）
 
 - 位置：右侧栏注册 `notes` 标签页类型 + `guide` 入口「全部笔记本」（`sidebarRightTabs` / `sidebar.right.pane.tab`）。
-- 行为：点入口 → `selectPanel('notes')`，在**主面板**显示全部笔记本（树 + 编辑器）。
+- 行为：点入口 → `selectPanel('notes-all')`，在**主面板**显示全部笔记本（树 + 编辑器）。
 - 标签页本身可作为“最近打开的笔记本”列表；点条目同样进主面板。
 - 说明：本机 0.2.1-rc.5 的右栏没有“竖向面板列表”，所以“在那四项下面”只能落在右栏的「新标签页」入口；如果这不是你要的位置，需要你指出你屏幕上那四项的具体位置。
 
 ---
 
-## 3.3 Step 1 修复记录（2026-11-04，待复核）
+## 3.3 Step 1 修复记录（2026-11-04，已复核 PASS）
 
 针对独立审核的 M1–M4 与可修 minors：
 
-- **M1**：左侧面板行改成动态 label——状态由 `entry-state.js` 维护，变化时重新注册该行，显示「新建笔记本 / 打开笔记本」；从左侧行打开主面板且当前工作区没有笔记本时自动建（根层级、工作区名），从右侧入口进入时置 suppress 不误建。
-- **M2**：右侧「全部笔记本」点击后直接 `selectPanel('notes')` 进主面板（标签页挂载时触发一次）。
+- **M1**：左侧面板行改成动态 label——状态由 `entry-state.js` 维护，变化时重新注册该行，显示「新建笔记本 / 打开笔记本」；从左侧行打开主面板（key=notes）且当前工作区没有笔记本时自动建（根层级、工作区名）；右侧入口进 key=notes-all，结构上不会自动建。
+- **M2**：右侧「全部笔记本」点击后直接 `selectPanel('notes-all')` 进主面板全局视图（标签页挂载时触发一次）。
 - **M3**：「游离」改为按**已知工作区列表**判断，不再把非当前工作区误标。
 - **M4**：搜索摘要取原文（大小写/空白保留），匹配仍走归一化。
 - minors：补 `search` aria 文案；删 `.n-overlay` 死 CSS；`session-menu` 复用 `workspace-notebook` 的辅助函数；删除无消费者的 `locale/`；README/cordis/FIX-PLAN 更新；`console.info('[dsh-notes] build', …)` 由构建注入。

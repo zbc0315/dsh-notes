@@ -1,7 +1,7 @@
 {
   "name": "@tom2012/dsh-notes",
   "version": "0.1.0",
-  "description": "DSH Web 笔记本插件：左侧栏统一入口「全部笔记本」，按工作区新建/打开子笔记本，BlockNote 块编辑器（blocks JSON 真源 + Markdown 镜像），可供 Agent 读写。",
+  "description": "DSH Web 笔记本插件：左侧面板一行「笔记本」按当前工作区新建/打开，右侧「全部笔记本」是全局入口（主面板），BlockNote 块编辑器（blocks JSON 真源 + Markdown 镜像），可供 Agent 读写。",
   "license": "MIT",
   "author": {
     "name": "zbc0315"
