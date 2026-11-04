@@ -87,7 +87,9 @@ ${indent(code)}
  * 构建
  * ------------------------------------------------------------------ */
 
+const BUILD_ID = new Date().toISOString()
 const baseOptions = {
+  define: { __NOTES_BUILD__: JSON.stringify(BUILD_ID) },
   bundle: true,
   write: false,
   format: 'cjs',

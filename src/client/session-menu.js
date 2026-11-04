@@ -14,35 +14,7 @@ import { api } from './api.js'
 import { dict, currentLang, onLangChange } from './i18n.js'
 import { NotebookIcon } from './icons.js'
 import { requestOpen } from './intent.js'
-
-/** 从会话 id 解析工作区 cwd；解析不到返回 null。 */
-function cwdOfSession(ctx, sessionId) {
-  if (!ctx || typeof ctx.get !== 'function') return null
-  try {
-    const sessions = ctx.get('sessions')
-    const list = sessions && sessions.list && sessions.list.getSnapshot()
-    const summary = list && list.byId && list.byId[sessionId]
-    const cwd = summary && summary.cwd
-    return typeof cwd === 'string' && cwd ? cwd : null
-  } catch {
-    return null
-  }
-}
-
-/** 工作区显示名：优先工作区行标题，否则路径末段。 */
-function labelOfWorkspace(ctx, cwd) {
-  try {
-    const workspaces = ctx && typeof ctx.get === 'function' ? ctx.get('workspaces') : null
-    const snapshot = workspaces && workspaces.list && workspaces.list.getSnapshot()
-    const items = (snapshot && snapshot.items) || []
-    const hit = items.find((item) => item.path === cwd)
-    if (hit && (hit.title || hit.displayTitle)) return hit.title || hit.displayTitle
-  } catch {
-    /* 只用路径兜底 */
-  }
-  const parts = String(cwd || '').split(/[\\/]/).filter(Boolean)
-  return parts.length ? parts[parts.length - 1] : String(cwd || '')
-}
+import { cwdOfSession, labelOfWorkspace } from './workspace-notebook.js'
 
 /**
  * 会话菜单行。

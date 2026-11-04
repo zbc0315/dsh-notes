@@ -16,6 +16,8 @@ import * as ReactDOM from 'react-dom'
 import * as ReactDOMClient from 'react-dom/client'
 
 import { NotesApp } from './app.js'
+import { api } from './api.js'
+import { getEntryState, setEntryState, subscribeEntry } from './entry-state.js'
 import { NotesBoundary } from './boundary.js'
 import { providePlatformModules } from './blocknote-runtime.js'
 import { PanelIcon } from './icons.js'
@@ -23,11 +25,15 @@ import { NotesRightPanel } from './right-panel.js'
 import { SessionNotesAction } from './session-row-action.js'
 import { SessionNotesMenuItem } from './session-menu.js'
 import { dict } from './i18n.js'
+import { readCurrentWorkspace, watchCurrentWorkspace } from './workspace.js'
 import { installStyles } from './styles.js'
+
+export { suppressAutoCreate } from './open-mode.js'
 
 export const inject = ['slots']
 
 export function apply(ctx) {
+  console.info('[dsh-notes] build', typeof __NOTES_BUILD__ === 'string' ? __NOTES_BUILD__ : 'dev')
   installStyles()
 
   // 编辑器重包（client/editor.js）由本 bundle 带着**同一份** react 实例去调用，
@@ -39,13 +45,60 @@ export function apply(ctx) {
     'react-dom/client': ReactDOMClient,
   })
 
-  // 左侧面板行：工作区级入口。点行本身由宿主负责 selectPanel('notes')。
-  ctx.slots.inject('sidebar.panellist', () =>
-    ctx.slots.register(
-      { name: 'sidebar.panellist', id: 'notes', order: 40, label: () => dict().panelLabel },
-      PanelIcon,
-    ),
-  )
+  // 左侧面板行：工作区级入口。label 在「新建笔记本 / 打开笔记本」之间切换，
+  // 状态变化时重新注册（宿主订阅了 sidebar.panellist，会重新渲染这一行）。
+  let stopped = false
+  const refreshEntry = async () => {
+    const ws = readCurrentWorkspace(ctx)
+    if (!ws) {
+      setEntryState({ cwd: null, title: '', hasNotebook: false, ready: true })
+      return
+    }
+    let has = false
+    try {
+      has = !!(await api.findWorkspace(ws.path))
+    } catch {
+      has = false
+    }
+    if (!stopped) setEntryState({ cwd: ws.path, title: ws.title, hasNotebook: has, ready: true })
+  }
+  const stopWatch = watchCurrentWorkspace(ctx, refreshEntry)
+  refreshEntry()
+  // 会话/工作区 store 的首个快照可能晚于插件启动；低频兜底刷新，保证面板行文案不长期是错的。
+  const timer = setInterval(() => {
+    if (typeof document === 'undefined' || document.visibilityState === 'visible') refreshEntry()
+  }, 5000)
+  ctx.effect(() => () => {
+    stopped = true
+    clearInterval(timer)
+    stopWatch()
+  }, 'dsh-notes: entry state watcher')
+
+  ctx.slots.inject('sidebar.panellist', () => {
+    let dispose = null
+    const render = () => {
+      if (dispose) {
+        dispose()
+        dispose = null
+      }
+      const state = getEntryState()
+      const label = !state.ready
+        ? dict().panelLabel
+        : state.hasNotebook
+          ? dict().openNotebook
+          : dict().createNotebook
+      dispose = ctx.slots.register(
+        { name: 'sidebar.panellist', id: 'notes', order: 40, label: () => label },
+        PanelIcon,
+      )
+    }
+    const off = subscribeEntry(render)
+    render()
+    return () => {
+      off()
+      if (dispose) dispose()
+    }
+  })
 
   // 主面板：笔记本本体（错误边界先接住崩溃，把组件栈打进控制台）。
   ctx.slots.inject('main', () =>

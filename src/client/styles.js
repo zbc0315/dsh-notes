@@ -354,62 +354,6 @@ const CSS = `
   min-height: 320px;
 }
 
-/* ---------- 笔记本浮层（shell.overlay） ---------- */
-.n-overlay {
-  position: fixed;
-  top: 56px;
-  right: 16px;
-  bottom: 16px;
-  width: min(960px, 92vw);
-  z-index: 2147482500;
-  background: var(--dsw-alias-bg-base);
-  color: var(--dsw-alias-label-primary);
-  border: 1px solid var(--dsw-alias-border-l3);
-  border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.n-overlay-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-layer-1);
-}
-.n-overlay-title {
-  flex: 1;
-  font-weight: 600;
-  font-size: 13px;
-}
-.n-overlay-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
-}
-.n-overlay-close:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-.n-overlay-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-}
-.n-overlay-body > * {
-  flex: 1;
-  min-width: 0;
-}
-
 /* ---------- 左侧会话行：笔记本按钮 ---------- */
 .n-rowaction {
   display: inline-flex;

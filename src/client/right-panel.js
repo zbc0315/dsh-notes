@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api.js'
 import { currentLang, dict, onLangChange } from './i18n.js'
 import { requestOpen } from './intent.js'
+import { suppressAutoCreate } from './open-mode.js'
 import { ensureWorkspaceNotebook, openNotesPanel } from './workspace-notebook.js'
 import { useCurrentWorkspace } from './workspace.js'
 
@@ -49,6 +50,14 @@ export function NotesRightPanel({ ctx }) {
     refresh()
   }, [refresh])
 
+  // 右侧入口点开就进主面板；这是「全局入口」，不要顺手建当前工作区的笔记本。
+  useEffect(() => {
+    suppressAutoCreate()
+    openNotesPanel(ctx)
+    // 只在挂载时触发一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const rows = useMemo(() => {
     const notebooks = (tree && tree.notebooks) || []
     const pages = (tree && tree.pages) || []
@@ -61,6 +70,7 @@ export function NotesRightPanel({ ctx }) {
   }, [tree])
 
   const openInMain = (notebookId) => {
+    suppressAutoCreate()
     requestOpen({ notebookId })
     openNotesPanel(ctx)
   }

@@ -146,6 +146,11 @@ function normalizeText(value) {
   return text.toLowerCase().replace(/\s+/g, ' ').trim()
 }
 
+/** 转义正则元字符。 */
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 /** 统计 needle 在 hay 中出现的次数（needle 为空返回 0）。 */
 function countOccurrences(hay, needle) {
   if (!hay || !needle) return 0
@@ -1522,10 +1527,30 @@ class NotesStore {
 
       let snippet = ''
       if (bodyHits) {
-        const at = bodyNorm.indexOf(needle)
-        const from = Math.max(0, at - 40)
-        const to = Math.min(bodyNorm.length, at + needle.length + 40)
-        snippet = bodyNorm.slice(from, to).trim()
+        // 摘要取原文，避免把大小写/空白替换后的归一化文本展示给用户。
+        const raw = String(plain || '')
+        let at = -1
+        let length = needle.length
+        try {
+          const pattern = new RegExp(escapeRegExp(String(query).trim()), 'i')
+          const match = pattern.exec(raw)
+          if (match) {
+            at = match.index
+            length = match[0].length
+          }
+        } catch {
+          /* 正则不可用就退回归一化文本 */
+        }
+        if (at < 0) {
+          const atNorm = bodyNorm.indexOf(needle)
+          const from = Math.max(0, atNorm - 40)
+          const to = Math.min(bodyNorm.length, atNorm + needle.length + 40)
+          snippet = bodyNorm.slice(from, to).trim()
+        } else {
+          const from = Math.max(0, at - 40)
+          const to = Math.min(raw.length, at + length + 40)
+          snippet = raw.slice(from, to).trim()
+        }
       }
       hits.push({
         id: row.id,

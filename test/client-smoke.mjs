@@ -352,6 +352,8 @@ async function main() {
   section('3. 渲染 app（有工作区、还没有笔记本）')
   const container = win.document.getElementById('root')
   const reactRoot = createRoot(container)
+  // 这个用例测「没有笔记本」的空态：先关掉自动建（左侧行打开时的默认行为）。
+  plugin.suppressAutoCreate()
   const renderApp = () => reactRoot.render(mainReg.component({ ctx: mainCtx }))
   renderApp()
 

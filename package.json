@@ -23,7 +23,6 @@
   "files": [
     "src/host",
     "client",
-    "locale",
     "icon.svg",
     "cordis.patch.yml",
     "README.md",

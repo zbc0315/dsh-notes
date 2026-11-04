@@ -14,6 +14,8 @@ import { api } from './api.js'
 import { NotesEditor } from './editor.js'
 import { currentLang, dict, onLangChange } from './i18n.js'
 import { consumeIntent, onIntent } from './intent.js'
+import { takeSuppressAutoCreate } from './open-mode.js'
+import { setEntryState } from './entry-state.js'
 import {
   ChevronIcon,
   CloseIcon,
@@ -98,6 +100,27 @@ export function NotesApp({ ctx }) {
   const searchRef = useRef(null)
 
   const grouped = useMemo(() => groupTree(tree), [tree])
+
+  // 把「当前工作区是否有笔记本」同步给左侧面板行（label 用）。
+  useEffect(() => {
+    if (loading || !workspace || !workspace.path) return
+    const has = (tree.notebooks || []).some((nb) => nb.workspacePath === workspace.path)
+    setEntryState({ cwd: workspace.path, title: workspace.title, hasNotebook: has, ready: true })
+  }, [loading, tree, workspace])
+
+  // 已知工作区路径（用于判断笔记本是否「游离」）
+  const knownWorkspacePaths = useMemo(() => {
+    const paths = new Set()
+    try {
+      const workspaces = ctx && typeof ctx.get === 'function' ? ctx.get('workspaces') : null
+      const snapshot = workspaces && workspaces.list && workspaces.list.getSnapshot()
+      for (const item of (snapshot && snapshot.items) || []) if (item.path) paths.add(item.path)
+    } catch {
+      /* 服务不在就退化为不标游离 */
+    }
+    return paths
+  }, [ctx, tree])
+
   const selectedNotebookId = useMemo(() => {
     if (!selectedPageId) return null
     const hit = (tree.pages || []).find((page) => page.id === selectedPageId)
@@ -123,6 +146,37 @@ export function NotesApp({ ctx }) {
   useEffect(() => {
     refresh()
   }, [refresh])
+
+  // 从左侧「笔记本」行打开主面板时：当前工作区还没有笔记本就自动建一个（根层级、以工作区名命名）。
+  // 右侧「全部笔记本」进入时会置 suppress，避免误建。
+  const autoCreated = useRef(false)
+  useEffect(() => {
+    if (loading || autoCreated.current) return
+    if (!workspace || !workspace.path) return
+    if (bound) return
+    if (takeSuppressAutoCreate()) return
+    autoCreated.current = true
+    let alive = true
+    ;(async () => {
+      try {
+        const existing = await api.findWorkspace(workspace.path)
+        if (existing) return
+        const notebook = await api.createNotebook({
+          title: workspace.title,
+          workspacePath: workspace.path,
+          workspaceLabel: workspace.title,
+        })
+        if (!alive) return
+        await refresh()
+        setExpanded((prev) => new Set(prev).add(notebook.id))
+      } catch {
+        /* 建不出来就保留面板里的「新建笔记本」按钮 */
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [loading, workspace, bound, refresh])
 
   /* ---------------- 外部意图（会话菜单 → 打开笔记本） ---------------- */
 
@@ -442,6 +496,7 @@ export function NotesApp({ ctx }) {
     const hasChildren = kids.length > 0 || pages.length > 0
     const isRenaming = renaming && renaming.kind === 'notebook' && renaming.id === notebook.id
     const isWorkspace = notebook.workspacePath && workspace?.path && notebook.workspacePath === workspace.path
+    const isKnownWorkspace = !notebook.workspacePath || knownWorkspacePaths.has(notebook.workspacePath)
     return (
       <div key={notebook.id}>
         <div
@@ -474,7 +529,7 @@ export function NotesApp({ ctx }) {
             <span className="n-row-title">{notebook.title}</span>
           )}
           {isWorkspace && <span className="n-row-badge">{t.currentWorkspace}</span>}
-          {notebook.workspacePath && !isWorkspace && <span className="n-row-badge">{t.orphan}</span>}
+          {notebook.workspacePath && !isKnownWorkspace && <span className="n-row-badge">{t.orphan}</span>}
           <span className="n-row-actions">
             <button
               type="button"
