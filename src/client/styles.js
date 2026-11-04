@@ -499,6 +499,63 @@ const CSS = `
   cursor: pointer;
   font: inherit;
 }
+
+/* ---------- 右侧栏：工作区笔记本（compact） ---------- */
+.n-right-host {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.n-app.is-compact {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+.n-compact-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  flex: none;
+  flex-wrap: wrap;
+}
+.n-compact-bar .n-wsbar-name {
+  flex: 1;
+  min-width: 0;
+}
+.n-compact-pages {
+  margin: 8px 10px 0;
+  flex: none;
+  max-width: calc(100% - 20px);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 12px;
+}
+.n-app.is-compact .n-main {
+  flex: 1;
+  min-height: 0;
+}
+.n-app.is-compact .n-editor {
+  padding: 12px 14px 80px;
+}
+.n-empty.is-compact {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 16px;
+  text-align: center;
+}
 `
 
 let installed = false

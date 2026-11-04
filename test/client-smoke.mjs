@@ -314,11 +314,13 @@ async function main() {
   const mainReg = registrations.find((item) => item.options.name === 'main')
   const menuReg = registrations.find((item) => item.options.name === 'sidebar.workspaces.session.menu.item')
   const rowActionReg = registrations.find((item) => item.options.name === 'sidebar.workspaces.session.row.action')
-  ok(panelReg !== undefined, '注册了左侧面板行「笔记本」')
+  ok(panelReg !== undefined, '注册了左侧面板行')
   eq(panelReg.options.id, 'notes', '面板 id = notes')
   eq(panelReg.options.order, 40, '面板 order = 40')
   ok(typeof panelReg.options.label === 'function', '面板 label 是函数')
-  eq(panelReg.options.label(), '笔记本', '面板文案是「笔记本」而不是「全部笔记本」')
+  eq(panelReg.options.label(), '全部笔记本', '左侧面板是全局入口「全部笔记本」')
+  ok(menuReg === undefined, '左侧不再有会话级「新建笔记本」菜单项')
+  ok(rowActionReg === undefined, '左侧不再有会话行「新建笔记本」按钮')
 
   const rightType = rightTabTypes.find((item) => item.kind === 'notes')
   ok(rightType !== undefined, '注册了右侧 notes 标签类型')
@@ -326,13 +328,11 @@ async function main() {
   const rightBody = registrations.find((item) => item.options.name === 'sidebar.right.pane.tab')
   ok(rightBody !== undefined && rightBody.options.key === 'dsh-notes', '右侧标签内容注册在类型 id 下')
   ok(mainReg !== undefined, '注册了 main 主面板')
-  ok(menuReg !== undefined, '注册了会话菜单项')
-  ok(rowActionReg !== undefined, '注册了会话行悬停按钮（工作区级入口）')
   // 右侧 guide 的 title 也是 thunk：切语言要跟着变。
   win.document.documentElement.lang = 'zh-CN'
-  eq(rightType.guide[0].title(), '全部笔记本', '中文 guide 标题正确')
+  eq(rightType.guide[0].title(), '笔记本', '中文 guide 标题正确')
   win.document.documentElement.lang = 'en'
-  eq(rightType.guide[0].title(), 'All notebooks', '英文 guide 标题正确（切语言实时刷新）')
+  eq(rightType.guide[0].title(), 'Notebooks', '英文 guide 标题正确（切语言实时刷新）')
   win.document.documentElement.lang = 'zh-CN'
   eq(mainReg.options.key, 'notes', 'main 槽 key = notes')
 
@@ -349,35 +349,33 @@ async function main() {
     ok(typeof resolved === 'string' && resolved.length > 0, `${name} 求值后是非空字符串`)
   }
 
-  section('3. 渲染 app（有工作区、还没有笔记本）')
+  section('3. 先建工作区笔记本与一页，再渲染全局视图')
+  const boundNotebook = await store.bindWorkspace({
+    workspacePath: workspaceDir,
+    workspaceLabel: workspaceTitle,
+    title: workspaceTitle,
+  })
+  const firstPage = await store.createPage({ notebookId: boundNotebook.id, title: '无标题' })
+  ok(boundNotebook.parentId === null, '笔记本在根的第一层')
+  ok(path.resolve(boundNotebook.workspacePath || '') === fs.realpathSync(workspaceDir), '笔记本绑定到工作区路径')
+
   const container = win.document.getElementById('root')
   const reactRoot = createRoot(container)
-  // 这个用例测「没有笔记本」的空态：用全局视图（key=notes-all，不自动建）。
-  const allReg = registrations.find((item) => item.options.name === 'main' && item.options.key === 'notes-all')
-  ok(allReg !== undefined, '注册了 main(key=notes-all) 全局视图')
-  const renderApp = () => reactRoot.render(allReg.component({ ctx: mainCtx }))
+  const renderApp = () => reactRoot.render(mainReg.component({ ctx: mainCtx }))
   renderApp()
 
   await waitFor(() => container.querySelector('.n-app') !== null, 'app 挂载')
   await waitFor(() => container.textContent.includes(workspaceTitle), '工作区条显示当前工作区名')
   ok(container.textContent.includes('当前工作区'), '有「当前工作区」标签')
-  await waitFor(() => container.textContent.includes('还没有笔记本'), '空态提示出现')
   ok(container.querySelector('.n-search input') !== null, '搜索框存在')
+  await waitFor(() => container.querySelector('.n-row.is-notebook') !== null, '树里出现工作区笔记本')
 
-  section('4. 点「新建笔记本」')
-  const createButton = container.querySelector('.n-wsbar-actions .n-btn')
-  ok(createButton !== undefined, '工作区条有主按钮')
-  eq(createButton.textContent.trim(), '新建笔记本', '无笔记本时文案是「新建笔记本」')
-  createButton.dispatchEvent(new win.MouseEvent('click', { bubbles: true }))
-
-  await waitFor(() => store.tree().notebooks.length === 1, '磁盘上出现 1 个笔记本')
-  const notebook = store.tree().notebooks[0]
-  eq(notebook.title, workspaceTitle, '笔记本标题 = 工作区名')
-  eq(notebook.parentId, null, '笔记本在根的第一层')
-  ok(path.resolve(notebook.workspacePath || '') === fs.realpathSync(workspaceDir), '笔记本绑定到工作区路径')
-
-  await waitFor(() => store.tree().pages.length === 1, '自动建了一页')
-  await waitFor(() => container.textContent.includes('打开笔记本'), '按钮变成「打开笔记本」')
+  section('4. 展开笔记本并打开第一页')
+  container.querySelector('.n-row.is-notebook').dispatchEvent(new win.MouseEvent('click', { bubbles: true }))
+  await waitFor(() => container.querySelectorAll('.n-row').length >= 2, '展开后出现页面行')
+  const pageRow = container.querySelectorAll('.n-row')[1]
+  pageRow.dispatchEvent(new win.MouseEvent('click', { bubbles: true }))
+  ok(firstPage.id !== undefined, '第一页已创建')
 
   section('5. BlockNote 编辑器挂载')
   await waitFor(() => container.querySelector('.n-blocknote') !== null, '编辑器容器出现', 12000)
@@ -496,7 +494,7 @@ async function main() {
     ok(saved.page.markdown.includes('粘贴进来的正文'), 'Markdown 镜像同步更新（host 生成）')
     ok(store.search('粘贴进来的正文', 5).length > 0, '镜像内容可被搜索命中')
 
-    const created2 = await api.createPage({ notebookId: notebook.id, title: '空页' })
+    const created2 = await api.createPage({ notebookId: boundNotebook.id, title: '空页' })
     ok(Array.isArray(created2.blocks), 'api.createPage 返回 blocks 数组（空页）')
 
     const onlyTitle = await api.savePage({
@@ -521,23 +519,14 @@ async function main() {
   searchInput.dispatchEvent(new win.Event('input', { bubbles: true }))
   await waitFor(() => container.querySelector('.n-row.is-notebook') !== null, '清空搜索后回到树视图')
 
-  section('10. 会话 … 菜单 intent')
-  const menuHost = win.document.getElementById('menu')
-  const menuRoot = createRoot(menuHost)
-  menuRoot.render(menuReg.component({ sessionId: 's1' }))
-  await waitFor(() => menuHost.querySelector('.n-menu-item') !== null, '菜单行渲染出来')
-  const menuButton = menuHost.querySelector('.n-menu-item')
-  await waitFor(() => menuButton.textContent.includes('打开笔记本'), '菜单行文案是「打开笔记本」')
-
-  const nbRow = container.querySelector('.n-row.is-notebook')
-  nbRow.dispatchEvent(new win.MouseEvent('click', { bubbles: true }))
-  await waitFor(() => container.querySelector('.n-row.is-notebook')?.getAttribute('aria-expanded') === 'false', '笔记本被折叠')
-  menuButton.dispatchEvent(new win.MouseEvent('click', { bubbles: true }))
-  await waitFor(
-    () => container.querySelector('.n-row.is-notebook')?.getAttribute('aria-expanded') === 'true',
-    '点菜单项后笔记本重新展开（intent 生效）',
-  )
-  menuRoot.unmount()
+  section('10. 右侧栏 compact：工作区笔记本直接渲染在右侧栏')
+  const rightHost = win.document.getElementById('menu')
+  const rightRoot = createRoot(rightHost)
+  rightRoot.render(rightBody.component({ ctx: mainCtx }))
+  await waitFor(() => rightHost.querySelector('.n-app.is-compact') !== null, '右侧欄渲染 compact 笔记本')
+  ok(rightHost.textContent.includes(workspaceTitle), 'compact 面板显示当前工作区名')
+  ok(rightHost.querySelector('.n-compact-bar, .n-empty.is-compact') !== null, 'compact 面板带工作区条或空态')
+  rightRoot.unmount()
 
   section('10b. 暗色跟随宿主')
   win.document.body.setAttribute('data-ds-dark-theme', '')

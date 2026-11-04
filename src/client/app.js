@@ -14,7 +14,6 @@ import { api } from './api.js'
 import { NotesEditor } from './editor.js'
 import { currentLang, dict, onLangChange } from './i18n.js'
 import { consumeIntent, onIntent } from './intent.js'
-import { setEntryOwner, setEntryState } from './entry-state.js'
 import { pathKey, samePath } from './paths.js'
 import {
   ChevronIcon,
@@ -79,7 +78,7 @@ function RenameInput({ value, onChange, onCommit, onCancel }) {
   )
 }
 
-export function NotesApp({ ctx, autoCreate = true }) {
+export function NotesApp({ ctx, autoCreate = true, compact = false }) {
   const [lang, setLang] = useState(currentLang())
   useEffect(() => onLangChange(setLang), [])
   const t = useMemo(() => dict(lang), [lang])
@@ -102,21 +101,12 @@ export function NotesApp({ ctx, autoCreate = true }) {
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
-    setEntryOwner('app')
     return () => {
       mounted.current = false
-      setEntryOwner(null)
     }
   }, [])
 
   const grouped = useMemo(() => groupTree(tree), [tree])
-
-  // 把「当前工作区是否有笔记本」同步给左侧面板行（label 用）。
-  useEffect(() => {
-    if (loading || !workspace || !workspace.path) return
-    const has = (tree.notebooks || []).some((nb) => samePath(nb.workspacePath, workspace.path))
-    setEntryState({ cwd: workspace.path, title: workspace.title, hasNotebook: has, ready: true })
-  }, [loading, tree, workspace])
 
   // 已知工作区路径（用于判断笔记本是否「游离」）
   const knownWorkspacePaths = useMemo(() => {
@@ -175,12 +165,13 @@ export function NotesApp({ ctx, autoCreate = true }) {
           workspacePath: workspace.path,
           workspaceLabel: workspace.title,
         })
+        const page = await api.createPage({ notebookId: notebook.id, title: dict().untitled })
         if (!mounted.current) return
         const next = await api.tree()
         if (!mounted.current) return
         setTree({ notebooks: next.notebooks || [], pages: next.pages || [] })
         setExpanded((prev) => new Set(prev).add(notebook.id))
-        setEntryState({ cwd: workspace.path, title: workspace.title, hasNotebook: true, ready: true })
+        setSelectedPageId(page.id)
       } catch {
         /* 建不出来就保留面板里的「新建笔记本」按钮 */
       }
@@ -608,11 +599,11 @@ export function NotesApp({ ctx, autoCreate = true }) {
   const wsLabel = workspace ? workspace.title : t.noWorkspace
   const canBind = Boolean(workspace?.path)
 
-  return (
-    <div className="n-app">
-      <aside className="n-side">
-        <div className="n-wsbar">
-          <span className="n-wsbar-label">{t.currentWorkspace}</span>
+  if (compact) {
+    const wsPages = (tree.pages || []).filter((page) => bound && page.notebookId === bound.id)
+    return (
+      <div className="n-app is-compact">
+        <div className="n-compact-bar">
           <span className="n-wsbar-name" title={workspace?.path || ''}>
             <NotebookIcon />
             <b>{wsLabel}</b>
@@ -630,6 +621,77 @@ export function NotesApp({ ctx, autoCreate = true }) {
             <button
               type="button"
               className="n-btn"
+              disabled={busy || !bound}
+              title={t.newPage}
+              aria-label={t.newPage}
+              onClick={() => createPage()}
+            >
+              <EditIcon />
+            </button>
+          </span>
+        </div>
+
+        {error && (
+          <div className="n-banner" role="alert">
+            <span className="n-banner-text">{error}</span>
+            <button type="button" className="n-btn" onClick={refresh}>
+              {t.retry}
+            </button>
+          </div>
+        )}
+
+        {wsPages.length > 0 && (
+          <select
+            className="n-compact-pages"
+            aria-label={t.pages}
+            value={selectedPageId || ''}
+            onChange={(event) => setSelectedPageId(event.target.value || null)}
+          >
+            <option value="">{t.pages}</option>
+            {wsPages.map((page) => (
+              <option key={page.id} value={page.id}>
+                {page.title || t.untitled}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {selectedPageId ? (
+          <NotesEditor
+            pageId={selectedPageId}
+            t={t}
+            onChanged={() => refresh()}
+            onGone={() => {
+              setSelectedPageId(null)
+              refresh()
+            }}
+          />
+        ) : (
+          <div className="n-empty is-compact">
+            <b>{t.emptyPageTitle}</b>
+            <div>{t.emptyPageHint}</div>
+            <button type="button" className="n-btn" disabled={busy || !bound} onClick={() => createPage()}>
+              {t.newPage}
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="n-app">
+      <aside className="n-side">
+        <div className="n-wsbar">
+          <span className="n-wsbar-label">{t.currentWorkspace}</span>
+          <span className="n-wsbar-name" title={workspace?.path || ''}>
+            <NotebookIcon />
+            <b>{wsLabel}</b>
+          </span>
+          <span className="n-wsbar-actions">
+            <button
+              type="button"
+              className="n-btn is-icon"
               disabled={busy}
               title={t.newPage}
               aria-label={t.newPage}
