@@ -353,6 +353,107 @@ const CSS = `
 .n-blocknote .bn-editor {
   min-height: 320px;
 }
+
+/* ---------- 右侧栏：全部笔记本 ---------- */
+.n-right {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+}
+.n-right-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+.n-right-title {
+  flex: 1;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+.n-right-refresh {
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.n-right-refresh:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+.n-right-list {
+  overflow: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.n-right-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 7px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+}
+.n-right-row:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.n-right-row-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  gap: 1px;
+}
+.n-right-row-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.n-right-row-meta {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+.n-right-arrow {
+  color: var(--dsw-alias-label-tertiary);
+  flex: none;
+}
+.n-right-empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--dsw-alias-label-secondary);
+}
+.n-right-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  line-height: 1.5;
+}
+.n-right-action {
+  margin-top: 10px;
+  border: 1px solid var(--dsw-alias-border-l3);
+  background: var(--dsw-alias-bg-layer-1);
+  color: inherit;
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font: inherit;
+}
 `
 
 let installed = false

@@ -27,6 +27,7 @@ import * as ReactDOMClient from 'react-dom/client'
 import { NotesApp } from './app.js'
 import { providePlatformModules } from './blocknote-runtime.js'
 import { PanelIcon } from './icons.js'
+import { NotesRightPanel } from './right-panel.js'
 import { SessionNotesMenuItem } from './session-menu.js'
 import { dict } from './i18n.js'
 import { installStyles } from './styles.js'
@@ -73,4 +74,45 @@ export function apply(ctx) {
       (props) => <SessionNotesMenuItem ctx={ctx} sessionId={props && props.sessionId} />,
     ),
   )
+
+  // 右侧栏「全部笔记本」入口：注册一个标签页类型 + 内容。
+  // 右侧栏由 ui-sidebar-right 提供，稍于本插件就绪，所以用 ctx.inject 等它。
+  ctx.inject(['slots', 'sidebarRightTabs'], (scope) => {
+    const tabs = scope.sidebarRightTabs
+    const slots = scope.slots
+
+    if (tabs && typeof tabs.register === 'function') {
+      ctx.effect(
+        () =>
+          tabs.register({
+            id: 'dsh-notes',
+            kind: 'notes',
+            title: () => dict().rightTab,
+            guide: [
+              {
+                id: 'all',
+                order: 20,
+                title: () => dict().label,
+                description: () => dict().rightTabDesc,
+              },
+            ],
+          }),
+        'dsh-notes: right tab type',
+      )
+    }
+
+    if (slots && typeof slots.inject === 'function') {
+      ctx.effect(
+        () =>
+          slots.inject('sidebar.right.pane.tab', () =>
+            slots.register(
+              // body 的 key 是标签页类型的 id（不是 kind）。
+              { name: 'sidebar.right.pane.tab', key: 'dsh-notes' },
+              (props) => <NotesRightPanel ctx={ctx} {...props} />,
+            ),
+          ),
+        'dsh-notes: right tab body',
+      )
+    }
+  })
 }

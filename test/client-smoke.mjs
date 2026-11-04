@@ -254,6 +254,7 @@ async function main() {
   }
 
   const workspaceTitle = 'my-project'
+  const rightTabTypes = []
   const mainCtx = {
     slots: {
       inject(name, fn) {
@@ -263,6 +264,22 @@ async function main() {
         registrations.push({ options, component })
         return () => {}
       },
+    },
+    // 右侧栏标签类型注册表（宿主 ui-sidebar-right 提供）
+    sidebarRightTabs: {
+      register(definition) {
+        rightTabTypes.push(definition)
+        return () => {}
+      },
+    },
+    inject(services, callback) {
+      // 宿主里这两个服务是稍后就绪的；测试里同步给齐。
+      if (services.includes('slots') && services.includes('sidebarRightTabs')) {
+        callback({ slots: mainCtx.slots, sidebarRightTabs: mainCtx.sidebarRightTabs })
+      }
+    },
+    effect(fn) {
+      return fn()
     },
     layout: { selectPanel: () => {} },
     get(name) {
@@ -297,6 +314,12 @@ async function main() {
   const mainReg = registrations.find((item) => item.options.name === 'main')
   const menuReg = registrations.find((item) => item.options.name === 'sidebar.workspaces.session.menu.item')
   ok(panelReg !== undefined, '注册了 sidebar.panellist')
+
+  const rightType = rightTabTypes.find((item) => item.kind === 'notes')
+  ok(rightType !== undefined, '注册了右侧 notes 标签类型')
+  ok(rightType && rightType.guide && rightType.guide.length === 1, '右侧 guide 有一个入口')
+  const rightBody = registrations.find((item) => item.options.name === 'sidebar.right.pane.tab')
+  ok(rightBody !== undefined && rightBody.options.key === 'dsh-notes', '右侧标签内容注册在类型 id 下')
   ok(mainReg !== undefined, '注册了 main')
   ok(menuReg !== undefined, '注册了会话菜单项')
   eq(panelReg.options.id, 'notes', '面板 id = notes')

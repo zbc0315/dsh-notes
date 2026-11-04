@@ -2,8 +2,8 @@
  * 文案：不引宿主 i18n 运行时（client 半与宿主解耦），只读
  * `document.documentElement.lang` —— 这正是 dsh-client-locale 在切换语言时改的那个属性。
  *
- * 面板行的 label 走另一条路：sidebar.panellist 的 label 允许传 { zh, en } 映射，
- * 宿主自己 resolveSlotLabel + 监听 locale 变化，所以那里不用本文件。
+ * 槽注册项的 label 走另一条路：只能传字符串或 `() => string`（宿主会按当前语言
+ * 重新求值），不能传 { zh, en } 对象——对象会被 React 当子元素渲染（React #31）。
  */
 
 const ZH = {
@@ -47,6 +47,8 @@ const ZH = {
   noResults: '没有结果',
   notebook: '笔记本',
   page: '页面',
+  rightTab: '笔记本',
+  rightTabDesc: '浏览全部工作区的笔记本',
 }
 
 const EN = {
@@ -90,6 +92,8 @@ const EN = {
   noResults: 'No results',
   notebook: 'Notebook',
   page: 'Page',
+  rightTab: 'Notebooks',
+  rightTabDesc: 'Browse notebooks from every workspace',
 }
 
 export function currentLang() {
