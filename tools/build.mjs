@@ -89,7 +89,10 @@ ${indent(code)}
 
 const BUILD_ID = new Date().toISOString()
 const baseOptions = {
-  define: { __NOTES_BUILD__: JSON.stringify(BUILD_ID) },
+  define: {
+    __NOTES_BUILD__: JSON.stringify(BUILD_ID),
+    'process.env.NODE_ENV': '"production"',
+  },
   bundle: true,
   write: false,
   format: 'cjs',
@@ -101,7 +104,6 @@ const baseOptions = {
   minify,
   legalComments: 'none',
   charset: 'utf8',
-  define: { 'process.env.NODE_ENV': '"production"' },
   logLevel: 'warning',
 }
 

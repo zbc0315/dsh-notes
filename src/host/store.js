@@ -347,7 +347,7 @@ function plainText(markdown) {
     line = line.replace(/\|/g, ' ') // 表格竖线
     out.push(line)
   }
-  return out.join(' ').replace(/\s+/g, ' ').trim()
+  return out.join(' ').trim()
 }
 
 /* ------------------------------------------------------------------ *

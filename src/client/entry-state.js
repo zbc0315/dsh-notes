@@ -7,6 +7,7 @@
 
 let state = { cwd: null, title: '', hasNotebook: false, ready: false }
 const listeners = new Set()
+let owner = null
 
 export function getEntryState() {
   return state
@@ -21,6 +22,14 @@ export function setEntryState(next) {
       /* 单个订阅者异常不影响其它人 */
     }
   }
+}
+
+export function setEntryOwner(next) {
+  owner = next
+}
+
+export function getEntryOwner() {
+  return owner
 }
 
 export function subscribeEntry(listener) {

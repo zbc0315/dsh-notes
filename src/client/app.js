@@ -15,7 +15,7 @@ import { NotesEditor } from './editor.js'
 import { currentLang, dict, onLangChange } from './i18n.js'
 import { consumeIntent, onIntent } from './intent.js'
 import { takeSuppressAutoCreate } from './open-mode.js'
-import { setEntryState } from './entry-state.js'
+import { setEntryOwner, setEntryState } from './entry-state.js'
 import {
   ChevronIcon,
   CloseIcon,
@@ -99,6 +99,16 @@ export function NotesApp({ ctx }) {
   const [busy, setBusy] = useState(false)
   const searchRef = useRef(null)
 
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    setEntryOwner('app')
+    return () => {
+      mounted.current = false
+      setEntryOwner(null)
+    }
+  }, [])
+
   const grouped = useMemo(() => groupTree(tree), [tree])
 
   // 把「当前工作区是否有笔记本」同步给左侧面板行（label 用）。
@@ -149,14 +159,13 @@ export function NotesApp({ ctx }) {
 
   // 从左侧「笔记本」行打开主面板时：当前工作区还没有笔记本就自动建一个（根层级、以工作区名命名）。
   // 右侧「全部笔记本」进入时会置 suppress，避免误建。
+  // 创建后直接并入当前树（不依赖可能被替换的实例的 refresh），保证面板立刻看得到。
   const autoCreated = useRef(false)
   useEffect(() => {
     if (loading || autoCreated.current) return
     if (!workspace || !workspace.path) return
-    if (bound) return
     if (takeSuppressAutoCreate()) return
     autoCreated.current = true
-    let alive = true
     ;(async () => {
       try {
         const existing = await api.findWorkspace(workspace.path)
@@ -166,17 +175,17 @@ export function NotesApp({ ctx }) {
           workspacePath: workspace.path,
           workspaceLabel: workspace.title,
         })
-        if (!alive) return
-        await refresh()
+        if (!mounted.current) return
+        const next = await api.tree()
+        if (!mounted.current) return
+        setTree({ notebooks: next.notebooks || [], pages: next.pages || [] })
         setExpanded((prev) => new Set(prev).add(notebook.id))
+        setEntryState({ cwd: workspace.path, title: workspace.title, hasNotebook: true, ready: true })
       } catch {
         /* 建不出来就保留面板里的「新建笔记本」按钮 */
       }
     })()
-    return () => {
-      alive = false
-    }
-  }, [loading, workspace, bound, refresh])
+  }, [loading, workspace && workspace.path])
 
   /* ---------------- 外部意图（会话菜单 → 打开笔记本） ---------------- */
 

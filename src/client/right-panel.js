@@ -160,7 +160,6 @@ export function NotesRightPanel({ ctx }) {
                 <span className="n-right-row-title">{notebook.title}</span>
                 <span className="n-right-row-meta">
                   {notebook.pageCount} {t.page}
-                  {notebook.workspacePath ? '' : ` · ${t.orphan}`}
                 </span>
               </span>
               <span className="n-right-arrow" aria-hidden="true">

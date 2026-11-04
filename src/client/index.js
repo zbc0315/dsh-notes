@@ -17,7 +17,7 @@ import * as ReactDOMClient from 'react-dom/client'
 
 import { NotesApp } from './app.js'
 import { api } from './api.js'
-import { getEntryState, setEntryState, subscribeEntry } from './entry-state.js'
+import { getEntryOwner, getEntryState, setEntryState, subscribeEntry } from './entry-state.js'
 import { NotesBoundary } from './boundary.js'
 import { providePlatformModules } from './blocknote-runtime.js'
 import { PanelIcon } from './icons.js'
@@ -26,6 +26,7 @@ import { SessionNotesAction } from './session-row-action.js'
 import { SessionNotesMenuItem } from './session-menu.js'
 import { dict } from './i18n.js'
 import { readCurrentWorkspace, watchCurrentWorkspace } from './workspace.js'
+import { suppressAutoCreate } from './open-mode.js'
 import { installStyles } from './styles.js'
 
 export { suppressAutoCreate } from './open-mode.js'
@@ -49,6 +50,7 @@ export function apply(ctx) {
   // 状态变化时重新注册（宿主订阅了 sidebar.panellist，会重新渲染这一行）。
   let stopped = false
   const refreshEntry = async () => {
+    if (getEntryOwner() === 'app') return
     const ws = readCurrentWorkspace(ctx)
     if (!ws) {
       setEntryState({ cwd: null, title: '', hasNotebook: false, ready: true })
@@ -64,10 +66,10 @@ export function apply(ctx) {
   }
   const stopWatch = watchCurrentWorkspace(ctx, refreshEntry)
   refreshEntry()
-  // 会话/工作区 store 的首个快照可能晚于插件启动；低频兜底刷新，保证面板行文案不长期是错的。
+  // 面板打开时由 NotesApp 拥有状态（owner=app）；关闭时低频兜底，保证切会话后文案跟上。
   const timer = setInterval(() => {
-    if (typeof document === 'undefined' || document.visibilityState === 'visible') refreshEntry()
-  }, 5000)
+    if (getEntryOwner() !== 'app') refreshEntry()
+  }, 3000)
   ctx.effect(() => () => {
     stopped = true
     clearInterval(timer)
@@ -141,7 +143,11 @@ export function apply(ctx) {
               {
                 id: 'all',
                 order: 20,
-                title: () => dict().label,
+                title: () => {
+                  // guide 页渲染这个标题时就把「不要自动建」置上；用户随后点击入口时生效。
+                  suppressAutoCreate()
+                  return dict().label
+                },
                 description: () => dict().rightTabDesc,
               },
             ],
