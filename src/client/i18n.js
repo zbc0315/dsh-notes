@@ -49,6 +49,7 @@ const ZH = {
   page: '页面',
   rightTab: '笔记本',
   rightTabDesc: '浏览全部工作区的笔记本',
+  rightEmptyHint: '点上面的「新建笔记本」开始。',
 }
 
 const EN = {
@@ -94,6 +95,7 @@ const EN = {
   page: 'Page',
   rightTab: 'Notebooks',
   rightTabDesc: 'Browse notebooks from every workspace',
+  rightEmptyHint: 'Use “New notebook” above to get started.',
 }
 
 export function currentLang() {

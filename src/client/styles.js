@@ -354,6 +354,29 @@ const CSS = `
   min-height: 320px;
 }
 
+/* ---------- 左侧会话行：笔记本按钮 ---------- */
+.n-rowaction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  padding: 0;
+}
+.n-rowaction:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.n-rowaction:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 /* ---------- 右侧栏：全部笔记本 ---------- */
 .n-right {
   display: flex;
@@ -388,6 +411,28 @@ const CSS = `
 .n-right-refresh:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
+}
+.n-right-ws {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+.n-right-ws-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+.n-right-ws-btn {
+  margin-top: 0;
+  flex: none;
+  padding: 3px 8px;
+  font-size: 12px;
 }
 .n-right-list {
   overflow: auto;

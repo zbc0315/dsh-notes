@@ -313,6 +313,7 @@ async function main() {
   const panelReg = registrations.find((item) => item.options.name === 'sidebar.panellist')
   const mainReg = registrations.find((item) => item.options.name === 'main')
   const menuReg = registrations.find((item) => item.options.name === 'sidebar.workspaces.session.menu.item')
+  const rowActionReg = registrations.find((item) => item.options.name === 'sidebar.workspaces.session.row.action')
   ok(panelReg === undefined, '左侧不再注册「全部笔记本」入口')
 
   const rightType = rightTabTypes.find((item) => item.kind === 'notes')
@@ -322,6 +323,7 @@ async function main() {
   ok(rightBody !== undefined && rightBody.options.key === 'dsh-notes', '右侧标签内容注册在类型 id 下')
   ok(mainReg !== undefined, '注册了 main')
   ok(menuReg !== undefined, '注册了会话菜单项')
+  ok(rowActionReg !== undefined, '注册了会话行悬停按钮（工作区级入口）')
   // 右侧 guide 的 title 也是 thunk：切语言要跟着变。
   win.document.documentElement.lang = 'zh-CN'
   eq(rightType.guide[0].title(), '全部笔记本', '中文 guide 标题正确')

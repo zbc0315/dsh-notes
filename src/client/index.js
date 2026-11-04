@@ -29,6 +29,7 @@ import * as ReactDOMClient from 'react-dom/client'
 import { NotesApp } from './app.js'
 import { providePlatformModules } from './blocknote-runtime.js'
 import { NotesRightPanel } from './right-panel.js'
+import { SessionNotesAction } from './session-row-action.js'
 import { SessionNotesMenuItem } from './session-menu.js'
 import { dict } from './i18n.js'
 import { installStyles } from './styles.js'
@@ -61,6 +62,14 @@ export function apply(ctx) {
         // 该槽的 label 没有消费者，而函数/对象都可能被当 React child 渲染。
       },
       (props) => <SessionNotesMenuItem ctx={ctx} sessionId={props && props.sessionId} />,
+    ),
+  )
+
+  // 左侧栏的工作区级入口：会话行悬停按钮（工作区行本身没有插槽）。
+  ctx.slots.inject('sidebar.workspaces.session.row.action', () =>
+    ctx.slots.register(
+      { name: 'sidebar.workspaces.session.row.action', id: 'notes', order: 100 },
+      (props) => <SessionNotesAction ctx={ctx} sessionId={props && props.sessionId} />,
     ),
   )
 

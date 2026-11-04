@@ -16,6 +16,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api.js'
 import { currentLang, dict, onLangChange } from './i18n.js'
 import { requestOpen } from './intent.js'
+import { ensureWorkspaceNotebook, openNotesPanel } from './workspace-notebook.js'
+import { useCurrentWorkspace } from './workspace.js'
 
 /**
  * @param {{ ctx: object }} props - 客户端 context，用来切主面板。
@@ -25,6 +27,7 @@ export function NotesRightPanel({ ctx }) {
   useEffect(() => onLangChange(setLang), [])
   const t = useMemo(() => dict(lang), [lang])
 
+  const workspace = useCurrentWorkspace(ctx)
   const [tree, setTree] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -59,11 +62,30 @@ export function NotesRightPanel({ ctx }) {
 
   const openInMain = (notebookId) => {
     requestOpen({ notebookId })
+    openNotesPanel(ctx)
+  }
+
+  const bound = useMemo(() => {
+    if (!workspace || !rows.length) return null
+    return rows.find((notebook) => notebook.workspacePath && notebook.workspacePath === workspace.path) || null
+  }, [rows, workspace])
+
+  const onCreateOrOpen = async () => {
+    if (!workspace || busy) return
+    setBusy(true)
+    setError('')
     try {
-      const layout = ctx.get && ctx.get('layout')
-      if (layout && typeof layout.selectPanel === 'function') layout.selectPanel('notes')
-    } catch {
-      /* 宿主布局服务形状变了就只发 intent */
+      if (bound) {
+        openInMain(bound.id)
+      } else {
+        const { notebook } = await ensureWorkspaceNotebook(ctx, workspace.path)
+        await refresh()
+        openInMain(notebook.id)
+      }
+    } catch (err) {
+      setError(String((err && err.message) || err))
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -83,6 +105,21 @@ export function NotesRightPanel({ ctx }) {
         </button>
       </div>
 
+      <div className="n-right-ws">
+        {workspace ? (
+          <>
+            <span className="n-right-ws-name" title={workspace.path}>
+              {workspace.title}
+            </span>
+            <button type="button" className="n-right-action n-right-ws-btn" onClick={onCreateOrOpen} disabled={busy}>
+              {bound ? t.openNotebook : t.createNotebook}
+            </button>
+          </>
+        ) : (
+          <span className="n-right-ws-name">{t.noWorkspace}</span>
+        )}
+      </div>
+
       {error ? (
         <div className="n-right-empty">
           <div>{t.unavailable}</div>
@@ -96,7 +133,7 @@ export function NotesRightPanel({ ctx }) {
       ) : rows.length === 0 ? (
         <div className="n-right-empty">
           <div>{t.empty}</div>
-          <div className="n-right-hint">{t.emptyHint}</div>
+          <div className="n-right-hint">{t.rightEmptyHint}</div>
         </div>
       ) : (
         <div className="n-right-list" role="list">
