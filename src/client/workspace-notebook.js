@@ -53,8 +53,12 @@ export async function ensureWorkspaceNotebook(ctx, cwd) {
 export function openNotesPanel(ctx) {
   try {
     const layout = ctx && typeof ctx.get === 'function' ? ctx.get('layout') : null
-    if (layout && typeof layout.selectPanel === 'function') layout.selectPanel('notes')
-  } catch {
-    /* 布局服务形状变了就算了，intent 仍会把面板选中 */
+    if (layout && typeof layout.selectPanel === 'function') {
+      layout.selectPanel('notes')
+      return
+    }
+    console.warn('[dsh-notes] layout 服务不可用，无法切主面板')
+  } catch (err) {
+    console.warn('[dsh-notes] selectPanel(notes) 失败：', (err && err.message) || err)
   }
 }

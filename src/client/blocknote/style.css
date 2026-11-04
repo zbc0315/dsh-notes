@@ -1,7 +1,8 @@
 /* BlockNote 样式入口：只在这里 @import 上游样式，本插件自己的映射写在下面。
  * 由 tools/build.mjs 单独打成 client/editor.css（宿主路由 /-/notes/client/editor.css）。 */
 
-@import "@blocknote/mantine/style.css";
+@import "@blocknote/core/style.css";
+@import "@blocknote/react/style.css";
 
 /* ------------------------------------------------------------------ *
  * 把 BlockNote / Mantine 的变量映射到 DSH 令牌，避免出现第二套设计语言。

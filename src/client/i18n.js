@@ -8,6 +8,7 @@
 
 const ZH = {
   label: '全部笔记本',
+  panelLabel: '笔记本',
   title: '全部笔记本',
   currentWorkspace: '当前工作区',
   noWorkspace: '未选择工作区',
@@ -50,10 +51,12 @@ const ZH = {
   rightTab: '笔记本',
   rightTabDesc: '浏览全部工作区的笔记本',
   rightEmptyHint: '点上面的「新建笔记本」开始。',
+  close: '关闭',
 }
 
 const EN = {
   label: 'All notebooks',
+  panelLabel: 'Notebook',
   title: 'All notebooks',
   currentWorkspace: 'Current workspace',
   noWorkspace: 'No workspace selected',
@@ -96,6 +99,7 @@ const EN = {
   rightTab: 'Notebooks',
   rightTabDesc: 'Browse notebooks from every workspace',
   rightEmptyHint: 'Use “New notebook” above to get started.',
+  close: 'Close',
 }
 
 export function currentLang() {

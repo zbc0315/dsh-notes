@@ -63,7 +63,6 @@
   ],
   "devDependencies": {
     "@blocknote/core": "^0.57.0",
-    "@blocknote/mantine": "^0.57.0",
     "@blocknote/react": "^0.57.0",
     "esbuild": "^0.28.2",
     "jsdom": "^27.4.0",

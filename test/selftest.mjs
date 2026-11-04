@@ -400,7 +400,7 @@ async function main() {
   const allowed = new Set(['react', 'react-dom', 'react/jsx-runtime', 'react-dom/client'])
   eq(requires.filter((name) => !allowed.has(name)), [], '主包只外置 platform 模块')
   ok(bundle.length < 700 * 1024, `主包没把编辑器打进来（${(bundle.length / 1024).toFixed(0)} KB）`)
-  ok(!bundle.includes('sidebar.panellist'), 'client 不再注册左侧「全部笔记本」入口')
+  ok(bundle.includes('sidebar.panellist'), 'client 注册左侧面板行「笔记本」')
   ok(bundle.includes('sidebarRightTabs') || bundle.includes('notes'), 'client 注册右侧标签页类型')
   ok(bundle.includes('全部笔记本') && bundle.includes('All notebooks'), '右侧 guide 文案中英都带')
 

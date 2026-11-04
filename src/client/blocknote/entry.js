@@ -11,7 +11,7 @@
  */
 
 import { useCreateBlockNote } from '@blocknote/react'
-import { BlockNoteView } from '@blocknote/mantine'
+import { BlockNoteViewRaw as BlockNoteView } from '@blocknote/react'
 import { zh as zhLocale, en as enLocale } from '@blocknote/core/locales'
 import { BlockNoteSchema, defaultBlockSpecs } from '@blocknote/core'
 
