@@ -102,7 +102,7 @@
 
 ## 4. 对 dsh-notes 的接入成本
 
-| 方案 | 集成工作量 | 体积影响 | 能否保持 Markdown 真源 | 风险 |
+| 方案 | 集成工作量 | 体积影响 | Markdown 往返能力（评估期口径） | 风险 |
 |---|---|---|---|---|
 | BlockNote | 中（换主题、关掉 Mantine 样式） | 大 | 需 JSON↔MD | MPL 弱 copyleft；XL 包许可 |
 | Yoopta | 中（装块插件、写主题） | 小 | 需 JSON↔MD | 生态小，API 可能变 |

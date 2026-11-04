@@ -297,7 +297,7 @@ dsh-notes/
 
 ### 6.3 集成要点（BlockNote）
 
-- 组件：`BlockNoteView`（`@blocknote/mantine`），`editor` 由 `useCreateBlockNote` 创建；面板打开时才 `import()`，避免每次进 GUI 都加载 6.2 MB。
+- 组件：`BlockNoteViewRaw`（`@blocknote/react`，不引 Mantine），`editor` 由 `useCreateBlockNote` 创建；面板打开时才 `import()`，避免每次进 GUI 都加载 3.3 MB。
 - 主题：把 BlockNote 的 CSS 变量映射到 DSH 令牌（`--bn-colors-editor-text` → `--dsw-alias-label-primary` 等），`theme` 跟随宿主深浅色；不引入 Mantine 的全局 Provider。
 - 内容：`editor.document`（blocks JSON）为真源；保存时用宿主 `blocksToMarkdown` 生成 Markdown 镜像（不用会插入 4 空格缩进的 `blocksToMarkdownLossy`）供搜索/导出/Agent 读。
 - 图片：粘贴/拖入 → `POST /-/notes/asset` → 自定义 image block 指向 `asset://<sha>`，渲染走同源路由（带鉴权）。
@@ -309,7 +309,7 @@ dsh-notes/
 
 | 阶段 | 内容 | 预估 | 完成判据 |
 | --- | --- | --- | --- |
-| M0 | 包骨架、patch、manifest、locale、图标、esbuild、安装冒烟 | 1d | 面板行出现、点开是空态页 |
+| M0 | 包骨架、patch、manifest、图标、esbuild、安装冒烟 | 1d | 面板行出现、点开是空态页 |
 | M1 | 存储层（index/pages/assets、原子写、回收站、搜索）+ 单测 | 2d | 断电式写入无损坏；搜索命中 |
 | M2 | 面板与树（根/工作区子笔记本/页面、创建/改名/删除、工作区条） | 2d | R1–R4 可演示 |
 | M3 | BlockNote 接入、JSON→Markdown 镜像、自动保存、图片 | 3d | 编辑/刷新/重启内容一致 |
