@@ -50,11 +50,11 @@ export async function ensureWorkspaceNotebook(ctx, cwd) {
 }
 
 /** 切到主面板的笔记页。 */
-export function openNotesPanel(ctx) {
+export function openNotesPanel(ctx, key = 'notes') {
   try {
     const layout = ctx && typeof ctx.get === 'function' ? ctx.get('layout') : null
     if (layout && typeof layout.selectPanel === 'function') {
-      layout.selectPanel('notes')
+      layout.selectPanel(key)
       return
     }
     console.warn('[dsh-notes] layout 服务不可用，无法切主面板')

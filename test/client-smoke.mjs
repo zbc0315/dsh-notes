@@ -352,9 +352,10 @@ async function main() {
   section('3. 渲染 app（有工作区、还没有笔记本）')
   const container = win.document.getElementById('root')
   const reactRoot = createRoot(container)
-  // 这个用例测「没有笔记本」的空态：先关掉自动建（左侧行打开时的默认行为）。
-  plugin.suppressAutoCreate()
-  const renderApp = () => reactRoot.render(mainReg.component({ ctx: mainCtx }))
+  // 这个用例测「没有笔记本」的空态：用全局视图（key=notes-all，不自动建）。
+  const allReg = registrations.find((item) => item.options.name === 'main' && item.options.key === 'notes-all')
+  ok(allReg !== undefined, '注册了 main(key=notes-all) 全局视图')
+  const renderApp = () => reactRoot.render(allReg.component({ ctx: mainCtx }))
   renderApp()
 
   await waitFor(() => container.querySelector('.n-app') !== null, 'app 挂载')

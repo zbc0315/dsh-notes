@@ -26,10 +26,7 @@ import { SessionNotesAction } from './session-row-action.js'
 import { SessionNotesMenuItem } from './session-menu.js'
 import { dict } from './i18n.js'
 import { readCurrentWorkspace, watchCurrentWorkspace } from './workspace.js'
-import { suppressAutoCreate } from './open-mode.js'
 import { installStyles } from './styles.js'
-
-export { suppressAutoCreate } from './open-mode.js'
 
 export const inject = ['slots']
 
@@ -102,14 +99,21 @@ export function apply(ctx) {
     }
   })
 
-  // 主面板：笔记本本体（错误边界先接住崩溃，把组件栈打进控制台）。
-  ctx.slots.inject('main', () =>
+  // 主面板：笔记本本体。
+  //   key=notes     —— 左侧「笔记本」行进入：工作区级，允许自动建；
+  //   key=notes-all —— 右侧「全部笔记本」进入：全局视图，绝不自动建。
+  ctx.slots.inject('main', () => {
     ctx.slots.register({ name: 'main', key: 'notes' }, () => (
       <NotesBoundary>
-        <NotesApp ctx={ctx} />
+        <NotesApp ctx={ctx} autoCreate />
       </NotesBoundary>
-    )),
-  )
+    ))
+    ctx.slots.register({ name: 'main', key: 'notes-all' }, () => (
+      <NotesBoundary>
+        <NotesApp ctx={ctx} autoCreate={false} />
+      </NotesBoundary>
+    ))
+  })
 
   // 会话「…」菜单：对会话所属工作区建/开。
   ctx.slots.inject('sidebar.workspaces.session.menu.item', () =>
@@ -143,11 +147,7 @@ export function apply(ctx) {
               {
                 id: 'all',
                 order: 20,
-                title: () => {
-                  // guide 页渲染这个标题时就把「不要自动建」置上；用户随后点击入口时生效。
-                  suppressAutoCreate()
-                  return dict().label
-                },
+                title: () => dict().label,
                 description: () => dict().rightTabDesc,
               },
             ],

@@ -14,8 +14,8 @@ import { api } from './api.js'
 import { NotesEditor } from './editor.js'
 import { currentLang, dict, onLangChange } from './i18n.js'
 import { consumeIntent, onIntent } from './intent.js'
-import { takeSuppressAutoCreate } from './open-mode.js'
 import { setEntryOwner, setEntryState } from './entry-state.js'
+import { pathKey, samePath } from './paths.js'
 import {
   ChevronIcon,
   CloseIcon,
@@ -79,7 +79,7 @@ function RenameInput({ value, onChange, onCommit, onCancel }) {
   )
 }
 
-export function NotesApp({ ctx }) {
+export function NotesApp({ ctx, autoCreate = true }) {
   const [lang, setLang] = useState(currentLang())
   useEffect(() => onLangChange(setLang), [])
   const t = useMemo(() => dict(lang), [lang])
@@ -114,7 +114,7 @@ export function NotesApp({ ctx }) {
   // 把「当前工作区是否有笔记本」同步给左侧面板行（label 用）。
   useEffect(() => {
     if (loading || !workspace || !workspace.path) return
-    const has = (tree.notebooks || []).some((nb) => nb.workspacePath === workspace.path)
+    const has = (tree.notebooks || []).some((nb) => samePath(nb.workspacePath, workspace.path))
     setEntryState({ cwd: workspace.path, title: workspace.title, hasNotebook: has, ready: true })
   }, [loading, tree, workspace])
 
@@ -124,7 +124,7 @@ export function NotesApp({ ctx }) {
     try {
       const workspaces = ctx && typeof ctx.get === 'function' ? ctx.get('workspaces') : null
       const snapshot = workspaces && workspaces.list && workspaces.list.getSnapshot()
-      for (const item of (snapshot && snapshot.items) || []) if (item.path) paths.add(item.path)
+      for (const item of (snapshot && snapshot.items) || []) if (item.path) paths.add(pathKey(item.path))
     } catch {
       /* 服务不在就退化为不标游离 */
     }
@@ -164,7 +164,7 @@ export function NotesApp({ ctx }) {
   useEffect(() => {
     if (loading || autoCreated.current) return
     if (!workspace || !workspace.path) return
-    if (takeSuppressAutoCreate()) return
+    if (!autoCreate) return
     autoCreated.current = true
     ;(async () => {
       try {
@@ -185,7 +185,7 @@ export function NotesApp({ ctx }) {
         /* 建不出来就保留面板里的「新建笔记本」按钮 */
       }
     })()
-  }, [loading, workspace && workspace.path])
+  }, [loading, workspace && workspace.path, autoCreate])
 
   /* ---------------- 外部意图（会话菜单 → 打开笔记本） ---------------- */
 
@@ -504,8 +504,8 @@ export function NotesApp({ ctx }) {
     const pages = grouped.pagesOf.get(notebook.id) || []
     const hasChildren = kids.length > 0 || pages.length > 0
     const isRenaming = renaming && renaming.kind === 'notebook' && renaming.id === notebook.id
-    const isWorkspace = notebook.workspacePath && workspace?.path && notebook.workspacePath === workspace.path
-    const isKnownWorkspace = !notebook.workspacePath || knownWorkspacePaths.has(notebook.workspacePath)
+    const isWorkspace = notebook.workspacePath && workspace?.path && samePath(notebook.workspacePath, workspace.path)
+    const isKnownWorkspace = !notebook.workspacePath || knownWorkspacePaths.has(pathKey(notebook.workspacePath))
     return (
       <div key={notebook.id}>
         <div

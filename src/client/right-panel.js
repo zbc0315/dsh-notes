@@ -16,7 +16,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api.js'
 import { currentLang, dict, onLangChange } from './i18n.js'
 import { requestOpen } from './intent.js'
-import { suppressAutoCreate } from './open-mode.js'
+import { samePath } from './paths.js'
 import { ensureWorkspaceNotebook, openNotesPanel } from './workspace-notebook.js'
 import { useCurrentWorkspace } from './workspace.js'
 
@@ -50,10 +50,9 @@ export function NotesRightPanel({ ctx }) {
     refresh()
   }, [refresh])
 
-  // 右侧入口点开就进主面板；这是「全局入口」，不要顺手建当前工作区的笔记本。
+  // 右侧入口点开就进主面板的「全部笔记本」视图（key=notes-all，不会自动建）。
   useEffect(() => {
-    suppressAutoCreate()
-    openNotesPanel(ctx)
+    openNotesPanel(ctx, 'notes-all')
     // 只在挂载时触发一次
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -70,14 +69,13 @@ export function NotesRightPanel({ ctx }) {
   }, [tree])
 
   const openInMain = (notebookId) => {
-    suppressAutoCreate()
     requestOpen({ notebookId })
-    openNotesPanel(ctx)
+    openNotesPanel(ctx, 'notes-all')
   }
 
   const bound = useMemo(() => {
     if (!workspace || !rows.length) return null
-    return rows.find((notebook) => notebook.workspacePath && notebook.workspacePath === workspace.path) || null
+    return rows.find((notebook) => samePath(notebook.workspacePath, workspace.path)) || null
   }, [rows, workspace])
 
   const onCreateOrOpen = async () => {
