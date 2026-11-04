@@ -9,7 +9,7 @@
  *   · 未来的 CLI / 脚本
  * 因此 UI 与 Agent 对同一份数据永远一致 —— 这是设计的核心约束（R5）。
  *
- * 数据根默认 ~/.dsh/notes，Markdown 为真源，index.json 只是可重建的缓存。
+ * 数据根默认 ~/.dsh/notes：blocks JSON 为真源，Markdown 是导出镜像，index.json 是可重建的索引。
  */
 
 const os = require('node:os')

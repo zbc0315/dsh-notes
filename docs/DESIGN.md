@@ -82,7 +82,7 @@
 | 方案 | 做法 | 成本/风险 | 建议 |
 | --- | --- | --- | --- |
 | **A. 替换 `sidebar.workspaces`** | 重写工作区/会话树，在工作区行加「笔记本」按钮 | 高：复制整个 browser、`shadows-shipped-ui`、每次 DSH 升级都要跟 | 不采用 |
-| **B. 面板入口 + 面板内工作区条** | 侧栏一行进「全部笔记本」；面板顶部有「当前工作区：ask → 新建/打开笔记本」，左树按工作区分组 | 低：全部走官方 list 槽 | **P0，推荐** |
+| **B. 面板入口 + 面板内工作区条** | 左侧一行「笔记本」进当前工作区面板；面板顶部有「当前工作区：ask → 新建/打开笔记本」，左树按工作区分组 | 低：全部走官方 list 槽 | **P0，已实现** |
 | **C. 会话行前置图标 / 会话菜单项** | 每个会话行前的 16px 位显示 📓，或会话 “…” 菜单加「新建/打开笔记本」；点击即对**该会话所属工作区**操作 | 低-中：会出现在每一行，需要克制（默认只显示图标，config 可关） | **P1 增强**，默认开菜单项、图标默认关 |
 | **D. 向上游提槽** | 给 `dsh-client-ui-workspace` 加 `sidebar.workspaces.workspace.row.action` | 一次投入，长期最干净 | 同步提 issue/PR |
 
@@ -176,10 +176,11 @@ v0.1 用内存索引（标题 + plainText 子串，大小写/全半角归一）�
 ```
 ┌──────────────────────────── Client (web) ────────────────────────────┐
 │ 右侧栏：notes 标签页类型（guide: 全部笔记本）→ NotesRightPanel        │
-│ 左侧栏：会话「…」菜单 → 新建/打开该工作区笔记本                        │
-│        │ 两者都 → ctx.layout.selectPanel('notes')                    │
+│ 左侧面板行：笔记本 → 新建/打开该工作区笔记本（会话行/菜单是快捷入口）  │
+│        │ 左侧 → selectPanel('notes')；右侧 → selectPanel('notes-all')│
 │        ▼                                                             │
-│ main(key=notes) → <NotesApp>                                         │
+│ main(key=notes)     → <NotesApp autoCreate>   左入口，工作区视图        │
+│ main(key=notes-all) → <NotesApp autoCreate=false> 右入口，全局视图      │
 │   ├─ 工作区条：当前工作区 + [新建笔记本]/[打开笔记本]                    │
 │   ├─ 笔记本树（根 → 工作区子笔记本 → 页面）                             │
 │   ├─ BlockNote 编辑器（BlockNoteView、自动保存、Markdown 镜像）          │
@@ -209,7 +210,6 @@ dsh-notes/
     bundle.js             # __ModuleLoader__ 工厂，react 外置
   src/host/...            # store / routes / tools
   src/client/...          # NotesApp / Tree / Editor / api
-  locale/{zh,en}.json
   icon.svg
   docs/DESIGN.md
   tools/build.mjs         # esbuild，external: react
@@ -233,7 +233,7 @@ dsh-notes/
 | --- | --- | --- |
 | GET | `/-/notes/tree` | 笔记本树 + 页面索引 |
 | GET | `/-/notes/page?id=` | 读取页面（markdown + rev） |
-| PUT | `/-/notes/page?id=` | 保存（body: markdown, title, rev） |
+| PUT | `/-/notes/page?id=` | 保存（body: blocks, title, rev；markdown 由宿主生成，客户端不发） |
 | POST | `/-/notes/notebook` | 新建（parentId, title, workspacePath?） |
 | PATCH | `/-/notes/notebook?id=` | 重命名/改父级/排序 |
 | DELETE | `/-/notes/notebook?id=` | 删除（进回收站） |
@@ -299,7 +299,7 @@ dsh-notes/
 
 - 组件：`BlockNoteView`（`@blocknote/mantine`），`editor` 由 `useCreateBlockNote` 创建；面板打开时才 `import()`，避免每次进 GUI 都加载 6.2 MB。
 - 主题：把 BlockNote 的 CSS 变量映射到 DSH 令牌（`--bn-colors-editor-text` → `--dsw-alias-label-primary` 等），`theme` 跟随宿主深浅色；不引入 Mantine 的全局 Provider。
-- 内容：`editor.document`（blocks JSON）为真源；保存时同时生成 Markdown 镜像（`blocksToMarkdownLossy`）供搜索/导出/Agent 读。
+- 内容：`editor.document`（blocks JSON）为真源；保存时用宿主 `blocksToMarkdown` 生成 Markdown 镜像（不用会插入 4 空格缩进的 `blocksToMarkdownLossy`）供搜索/导出/Agent 读。
 - 图片：粘贴/拖入 → `POST /-/notes/asset` → 自定义 image block 指向 `asset://<sha>`，渲染走同源路由（带鉴权）。
 - 斜杠菜单：用 BlockNote 自带 suggestion menu，项按 DSH 习惯收敛（标题/列表/待办/引用/代码/表格/图片）。
 - 快捷键：`Cmd/Ctrl+S` 立即保存；不覆盖 BlockNote 自己的编辑快捷键。
