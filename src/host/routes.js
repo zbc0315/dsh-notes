@@ -349,7 +349,8 @@ function registerRoutes(ctx, store, options = {}) {
           /* ---------- 附件 ---------- */
           if (method === 'POST' && rest === '/asset') {
             const ext = guessAssetExt(req)
-            if (!ext) return sendJson(res, 400, { ok: false, error: '不支持的图片类型' })
+            // 上传白名单以 ASSET_TYPES 为准：svg 已移除（旧 svg 仍可安全 GET）
+            if (!ext || !ASSET_TYPES[ext]) return sendJson(res, 400, { ok: false, error: '不支持的图片类型' })
             const buffer = await readBinaryBody(req, maxUploadBytes)
             const asset = await store.putAsset(buffer, { ext, mime: ASSET_TYPES[ext] })
             return sendJson(res, 200, { ok: true, ...asset, url: store.assetUrl(asset.sha, asset.ext) })

@@ -78,11 +78,6 @@ export function NotesEditor({ pageId, t, onChanged, onGone }) {
     }
   }, [pageId])
 
-  // 同一个 pageId 重新挂载父组件时不要闪 loading（保留编辑器实例）
-  useEffect(() => {
-    if (!pageId) setPage(null)
-  }, [pageId])
-
   if (!pageId) return <div className="n-empty">{t.noPage}</div>
   if (state === 'loading' || state === 'idle') return <div className="n-empty">{t.loading}</div>
   if (state === 'error') return <div className="n-empty">{error}</div>

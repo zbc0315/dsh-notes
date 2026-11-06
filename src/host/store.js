@@ -775,7 +775,7 @@ class NotesStore {
           notebookId: name,
           title: title || pageId,
           order: row ? row.order ?? 0 : nextPageOrder(name),
-          rev: row ? row.rev ?? 1 : 1,
+          rev: Number.isFinite(parsed.rev) ? parsed.rev : row ? row.rev ?? 1 : 1,
           createdAt: created,
           updatedAt: updated,
           size: blocksSize(parsed.blocks),
@@ -1697,6 +1697,7 @@ class NotesStore {
       const nextRow = {
         ...row,
         title: nextTitle,
+        rev: currentRev + 1,
         updatedAt: now,
         size: blocksSize(blocks),
         mtimeMs: stat.mtimeMs,

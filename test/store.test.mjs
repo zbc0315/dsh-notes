@@ -776,6 +776,8 @@ test('13. appendPage / reorder / updateNotebook / setTitle / 404 边界', async 
   assert.equal(retitled.title, '新标题')
   assert.deepEqual(retitled.blocks, before.blocks)
   assert.equal(retitled.markdown, before.markdown)
+  const retitledDisk = JSON.parse(fs.readFileSync(retitled.path, 'utf8'))
+  assert.equal(retitled.rev, retitledDisk.rev, 'setTitle 返回的 rev 与磁盘一致')
 
   // DEFAULT_OPTIONS 形状
   assert.equal(DEFAULT_OPTIONS.maxPageBytes, 2 * 1024 * 1024)
