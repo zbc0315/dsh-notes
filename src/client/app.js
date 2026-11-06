@@ -13,7 +13,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api.js'
 import { NotesEditor } from './editor.js'
 import { currentLang, dict, onLangChange } from './i18n.js'
-import { consumeIntent, onIntent } from './intent.js'
 import { pathKey, samePath } from './paths.js'
 import {
   ChevronIcon,
@@ -106,6 +105,13 @@ export function NotesApp({ ctx, autoCreate = true, compact = false }) {
     }
   }, [])
 
+  const workspacePath = workspace?.path || ''
+  useEffect(() => {
+    // 切工作区后，旧页/旧笔记本不再属于当前作用域，清掉选中并允许重新自动建。
+    setSelectedPageId(null)
+    autoCreated.current = false
+  }, [workspacePath])
+
   const grouped = useMemo(() => groupTree(tree), [tree])
 
   // 已知工作区路径（用于判断笔记本是否「游离」）
@@ -120,6 +126,13 @@ export function NotesApp({ ctx, autoCreate = true, compact = false }) {
     }
     return paths
   }, [ctx, tree])
+
+  // compact：当前页必须属于当前工作区的笔记本，否则落到第一页
+  useEffect(() => {
+    if (!compact) return
+    const pages = (tree.pages || []).filter((page) => bound && page.notebookId === bound.id)
+    setSelectedPageId((prev) => (pages.some((page) => page.id === prev) ? prev : pages[0]?.id || null))
+  }, [compact, bound, tree])
 
   const selectedNotebookId = useMemo(() => {
     if (!selectedPageId) return null
@@ -179,52 +192,6 @@ export function NotesApp({ ctx, autoCreate = true, compact = false }) {
   }, [loading, workspace && workspace.path, autoCreate])
 
   /* ---------------- 外部意图（会话菜单 → 打开笔记本） ---------------- */
-
-  const applyIntent = useCallback(
-    async (intent) => {
-      if (!intent) return
-      const fresh = await refresh()
-      let notebookId = intent.notebookId || null
-      if (!notebookId && intent.workspacePath) {
-        try {
-          const notebook = await api.findWorkspace(intent.workspacePath)
-          notebookId = notebook ? notebook.id : null
-        } catch {
-          notebookId = null
-        }
-      }
-      if (!notebookId) return
-      setExpanded((prev) => new Set(prev).add(notebookId))
-      if (intent.pageId) {
-        setSelectedPageId(intent.pageId)
-        return
-      }
-      const pages = ((fresh && fresh.pages) || []).filter((page) => page.notebookId === notebookId)
-      if (pages.length > 0) {
-        setSelectedPageId(pages[0].id)
-        return
-      }
-      try {
-        const page = await api.createPage({ notebookId, title: t.untitled })
-        await refresh()
-        setSelectedPageId(page.id)
-      } catch (err) {
-        setError(String((err && err.message) || err))
-      }
-    },
-    [refresh, t],
-  )
-
-  useEffect(() => {
-    // 面板可能是被会话菜单「叫醒」的：先消费挂起的那条 intent，再订阅后续的。
-    const pendingIntent = consumeIntent()
-    if (pendingIntent) applyIntent(pendingIntent)
-    const stop = onIntent((intent) => {
-      consumeIntent()
-      applyIntent(intent)
-    })
-    return stop
-  }, [applyIntent])
 
   // 工作区绑定：路径变了就重新查一次；树变了（可能刚建/删笔记本）也重查。
   useEffect(() => {
@@ -624,7 +591,7 @@ export function NotesApp({ ctx, autoCreate = true, compact = false }) {
               disabled={busy || !bound}
               title={t.newPage}
               aria-label={t.newPage}
-              onClick={() => createPage()}
+              onClick={() => bound && createPage(bound.id)}
             >
               <EditIcon />
             </button>
@@ -670,7 +637,7 @@ export function NotesApp({ ctx, autoCreate = true, compact = false }) {
           <div className="n-empty is-compact">
             <b>{t.emptyPageTitle}</b>
             <div>{t.emptyPageHint}</div>
-            <button type="button" className="n-btn" disabled={busy || !bound} onClick={() => createPage()}>
+            <button type="button" className="n-btn" disabled={busy || !bound} onClick={() => bound && createPage(bound.id)}>
               {t.newPage}
             </button>
           </div>
@@ -713,7 +680,7 @@ export function NotesApp({ ctx, autoCreate = true, compact = false }) {
             onChange={(event) => setQuery(event.target.value)}
           />
           {query && (
-            <button type="button" className="n-btn is-icon" aria-label={t.delete} onClick={() => setQuery('')}>
+            <button type="button" className="n-btn is-icon" aria-label={t.clearSearch} onClick={() => setQuery('')}>
               <CloseIcon size={12} />
             </button>
           )}

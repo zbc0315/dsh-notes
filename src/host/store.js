@@ -254,6 +254,8 @@ function buildPageJson(meta, blocks) {
     created: new Date(meta.created).toISOString(),
     updated: new Date(meta.updated).toISOString(),
     tags: Array.isArray(meta.tags) ? meta.tags.map((t) => String(t).trim()).filter(Boolean) : [],
+    // rev 落进真源：两个进程（UI 与 Agent）各自读盘后，过期 rev 能真正撞上 409。
+    rev: Number.isFinite(meta.rev) && meta.rev > 0 ? meta.rev : 1,
     blocks: Array.isArray(blocks) ? blocks : [],
   }
   return `${JSON.stringify(payload, null, 2)}\n`
@@ -297,6 +299,7 @@ function parsePageJson(raw) {
     created: toMs(parsed.created, undefined),
     updated: toMs(parsed.updated, undefined),
     tags: Array.isArray(parsed.tags) ? parsed.tags.map((t) => String(t).trim()).filter(Boolean) : [],
+    rev: Number.isFinite(parsed.rev) && parsed.rev > 0 ? parsed.rev : undefined,
     blocks: Array.isArray(parsed.blocks) ? parsed.blocks : [],
   }
 }
@@ -679,7 +682,7 @@ class NotesStore {
         const title = cleanName(parsed.data.title, pageId)
         const tags = Array.isArray(parsed.data.tags) ? parsed.data.tags : []
         const blocks = markdownToBlocks(parsed.body)
-        const meta = { id: pageId, title, created, updated, tags }
+        const meta = { id: pageId, title, created, updated, tags, rev: 1 }
         // 迁移后把 .md 归一成标准镜像（frontmatter + blocksToMarkdown），并让 mtime 与 .json 对齐。
         try {
           await writeFileAtomic(path.join(dir, `${pageId}.json`), buildPageJson(meta, blocks))
@@ -1146,7 +1149,8 @@ class NotesStore {
     if (!disk.hasJson && !disk.hasMirror) throw notFound(`页面文件不存在: ${pageId}`)
     if (disk.data.tags && disk.data.tags.length) this._tags.set(pageId, disk.data.tags)
     this._plain.set(pageId, plainText(disk.markdown))
-    return toPageDetail(row, disk.blocks, disk.markdown, disk.stat ? disk.stat.mtimeMs : row.mtimeMs ?? 0, disk.file)
+    const currentRev = Number.isFinite(disk.data.rev) ? disk.data.rev : row.rev ?? 1
+    return toPageDetail({ ...row, rev: currentRev }, disk.blocks, disk.markdown, disk.stat ? disk.stat.mtimeMs : row.mtimeMs ?? 0, disk.file)
   }
 
   /**
@@ -1182,7 +1186,7 @@ class NotesStore {
         mtimeMs: now,
       }
 
-      const meta = { id, title, created: now, updated: now, tags: [] }
+      const meta = { id, title, created: now, updated: now, tags: [], rev: 1 }
       const file = this._pageFile(notebookId, id)
       await writeFileAtomic(file, buildPageJson(meta, blocks))
       await writeFileAtomic(this._mirrorFile(notebookId, id), buildMirrorFile(meta, markdown))
@@ -1234,10 +1238,11 @@ class NotesStore {
       const nextMarkdown = blocksToMarkdown(nextBlocks)
       const nextSize = blocksSize(nextBlocks)
 
-      // 乐观锁（页面级）
+      // 乐观锁（页面级）：以磁盘里的 rev 为准，跨进程（UI / Agent）也能撞上。
       const rev = args.rev === undefined || args.rev === null ? null : Number(args.rev)
-      if (rev !== null && rev !== row.rev) {
-        const current = toPageDetail(row, currentBlocks, disk.markdown, mtimeMs, disk.file)
+      const currentRev = Number.isFinite(disk.data.rev) ? disk.data.rev : row.rev ?? 1
+      if (rev !== null && rev !== currentRev) {
+        const current = toPageDetail({ ...row, rev: currentRev }, currentBlocks, disk.markdown, mtimeMs, disk.file)
         throw new StoreError(409, '页面已在别处被修改，请重新读取后再保存', current)
       }
 
@@ -1265,12 +1270,12 @@ class NotesStore {
       const nextRow = {
         ...row,
         title: nextTitle,
-        rev: (row.rev ?? 1) + 1,
+        rev: currentRev + 1,
         createdAt: row.createdAt,
         updatedAt: now,
         size: nextSize,
       }
-      const meta = { id: row.id, title: nextTitle, created: row.createdAt, updated: now, tags }
+      const meta = { id: row.id, title: nextTitle, created: row.createdAt, updated: now, tags, rev: nextRow.rev }
       await writeFileAtomic(disk.file, buildPageJson(meta, nextBlocks))
       await writeFileAtomic(disk.mirrorFile, buildMirrorFile(meta, nextMarkdown))
       const stat = await fsp.stat(disk.file)
@@ -1306,14 +1311,15 @@ class NotesStore {
       const tags = disk.data.tags ?? this._tags.get(row.id) ?? []
       const title = cleanName(disk.data.title, row.title)
       const now = Date.now()
+      const currentRev = Number.isFinite(disk.data.rev) ? disk.data.rev : row.rev ?? 1
       const nextRow = {
         ...row,
         title,
-        rev: (row.rev ?? 1) + 1,
+        rev: currentRev + 1,
         updatedAt: now,
         size: blocksSize(nextBlocks),
       }
-      const meta = { id: row.id, title, created: row.createdAt, updated: now, tags }
+      const meta = { id: row.id, title, created: row.createdAt, updated: now, tags, rev: nextRow.rev }
       await writeFileAtomic(disk.file, buildPageJson(meta, nextBlocks))
       await writeFileAtomic(disk.mirrorFile, buildMirrorFile(meta, nextMarkdown))
       const stat = await fsp.stat(disk.file)
@@ -1682,7 +1688,8 @@ class NotesStore {
       const tags = disk.data.tags ?? this._tags.get(row.id) ?? []
       const blocks = disk.blocks
       const markdown = blocksToMarkdown(blocks)
-      const meta = { id: row.id, title: nextTitle, created: row.createdAt, updated: now, tags }
+      const currentRev = Number.isFinite(disk.data.rev) ? disk.data.rev : row.rev ?? 1
+      const meta = { id: row.id, title: nextTitle, created: row.createdAt, updated: now, tags, rev: currentRev + 1 }
       await writeFileAtomic(disk.file, buildPageJson(meta, blocks))
       await writeFileAtomic(disk.mirrorFile, buildMirrorFile(meta, markdown))
       const stat = await fsp.stat(disk.file)

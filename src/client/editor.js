@@ -48,6 +48,8 @@ export function NotesEditor({ pageId, t, onChanged, onGone }) {
   const [page, setPage] = useState(null)
   const [state, setState] = useState('idle') // idle | loading | ready | error
   const [error, setError] = useState('')
+  const onGoneRef = useRef(onGone)
+  onGoneRef.current = onGone
 
   useEffect(() => {
     if (!pageId) {
@@ -69,12 +71,17 @@ export function NotesEditor({ pageId, t, onChanged, onGone }) {
         if (cancelled) return
         setError(String((err && err.message) || err))
         setState('error')
-        if (err && err.status === 404 && typeof onGone === 'function') onGone()
+        if (err && err.status === 404 && typeof onGoneRef.current === 'function') onGoneRef.current()
       })
     return () => {
       cancelled = true
     }
-  }, [pageId, onGone])
+  }, [pageId])
+
+  // 同一个 pageId 重新挂载父组件时不要闪 loading（保留编辑器实例）
+  useEffect(() => {
+    if (!pageId) setPage(null)
+  }, [pageId])
 
   if (!pageId) return <div className="n-empty">{t.noPage}</div>
   if (state === 'loading' || state === 'idle') return <div className="n-empty">{t.loading}</div>
@@ -114,6 +121,8 @@ function BlockNoteSurface({ page, t, onSaved }) {
 
   const baseRef = useRef({ ...page })
   const dirtyRef = useRef(false)
+  const changeSeqRef = useRef(0)
+  const pendingRef = useRef(false)
   const timerRef = useRef(null)
   const savingRef = useRef(false)
   const editorRef = useRef(null)
@@ -145,8 +154,14 @@ function BlockNoteSurface({ page, t, onSaved }) {
 
   const flush = useCallback(async ({ force = false, rev } = {}) => {
     const editor = editorRef.current
-    if (!editor || savingRef.current) return
+    if (!editor) return
+    if (savingRef.current) {
+      // 正在保存：记下来，等这一轮结束后再排一次，避免吞掉保存窗口里的输入。
+      pendingRef.current = true
+      return
+    }
     if (!dirtyRef.current && !force) return
+    const seq = changeSeqRef.current
     const base = baseRef.current
     let blocks
     try {
@@ -167,8 +182,13 @@ function BlockNoteSurface({ page, t, onSaved }) {
         baseSize: base.size,
       })
       baseRef.current = { ...result.page }
-      dirtyRef.current = false
-      setSaveState('saved')
+      if (changeSeqRef.current === seq) {
+        dirtyRef.current = false
+        setSaveState('saved')
+      } else {
+        // 保存期间又改了：保留 dirty，稍后自动再存一次。
+        setSaveState('dirty')
+      }
       setConflict(null)
       if (result.conflictFile) {
         const name = String(result.conflictFile).split(/[\\/]/).pop()
@@ -185,6 +205,10 @@ function BlockNoteSurface({ page, t, onSaved }) {
       }
     } finally {
       savingRef.current = false
+      if (pendingRef.current || (dirtyRef.current && changeSeqRef.current !== seq)) {
+        pendingRef.current = false
+        scheduleRef.current()
+      }
     }
   }, [])
 
@@ -195,6 +219,8 @@ function BlockNoteSurface({ page, t, onSaved }) {
       flush()
     }, AUTOSAVE_MS)
   }, [flush])
+  const scheduleRef = useRef(schedule)
+  scheduleRef.current = schedule
 
   // 卸载（切页/关面板）：立刻落盘一次，不等结果。
   useEffect(() => {
@@ -254,6 +280,7 @@ function BlockNoteSurface({ page, t, onSaved }) {
           onChange={(event) => {
             setTitle(event.target.value)
             dirtyRef.current = true
+            changeSeqRef.current += 1
             setSaveState('dirty')
             schedule()
           }}
@@ -304,6 +331,7 @@ function BlockNoteSurface({ page, t, onSaved }) {
               const rev = conflict.rev
               setConflict(null)
               dirtyRef.current = true
+              changeSeqRef.current += 1
               flush({ force: true, rev })
             }}
           >
@@ -357,6 +385,7 @@ function BlockNoteSurface({ page, t, onSaved }) {
               }}
               onChange={() => {
                 dirtyRef.current = true
+                changeSeqRef.current += 1
                 setSaveState((prev) => (prev === 'saving' ? prev : 'dirty'))
                 schedule()
               }}

@@ -641,7 +641,10 @@ function blockToMarkdown(block, depth, counters) {
     case 'codeBlock': {
       const language = block.props && typeof block.props.language === 'string' ? block.props.language : ''
       const code = plainContentText(block.content)
-      own = `\`\`\`${language}\n${code}\n\`\`\``
+      // 围栏长度必须比内容里最长的反引号串更长，否则代码块里的 ``` 会把镜像截断。
+      const longest = (code.match(/`+/g) || []).reduce((max, run) => Math.max(max, run.length), 0)
+      const fence = '`'.repeat(Math.max(3, longest + 1))
+      own = `${fence}${language}\n${code}\n${fence}`
       break
     }
     case 'image': {

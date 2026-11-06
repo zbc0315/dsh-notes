@@ -180,9 +180,10 @@ function registerTools(ctx, store, options = {}) {
               rootDir: tree.rootDir,
               current: null,
               hint: '该工作区还没有笔记本，可先用 notes_create_notebook 传 workspacePath 新建。',
-              notebooks: tree.notebooks.map((nb) => ({ ...nb, pageCount: tree.counts[nb.id] ?? 0 })),
-              pages: tree.pages.map(briefPage),
-              counts: tree.counts,
+              // 指定了 workspace 却未绑定时，不要把其它工作区的笔记灌进模型上下文。
+              notebooks: [],
+              pages: [],
+              counts: {},
             }
           }
           scope = bound
@@ -356,7 +357,7 @@ function registerTools(ctx, store, options = {}) {
       'notes_update',
       '保存笔记（替换整篇正文或只改标题）。markdown 会先转成 BlockNote 块再写入（有损），' +
         '镜像由块重新生成。建议先 notes_read 拿到 rev 再保存：rev 不匹配会报 409 并返回当前内容。' +
-        '不传 rev 时跳过版本检查但仍会检测磁盘外部改动，冲突时返回 conflictFile（旧内容已备份）。',
+        '不传 rev 会跳过版本检查（可能覆盖别人的修改）；建议总是先 notes_read 拿 rev。rev 已随页面落盘，跨进程（UI / Agent）也会撞 409。',
       {
         pageId: { type: 'string', required: true, description: '页面 id。' },
         markdown: { type: 'string', description: '新的 Markdown 正文（整篇替换，会转成块）。' },

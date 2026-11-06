@@ -33,7 +33,6 @@ const ASSET_TYPES = {
   jpeg: 'image/jpeg',
   gif: 'image/gif',
   webp: 'image/webp',
-  svg: 'image/svg+xml',
   avif: 'image/avif',
 }
 
@@ -373,6 +372,8 @@ function registerRoutes(ctx, store, options = {}) {
               // 内容寻址：sha 变了 URL 就变，可以长缓存。
               'Cache-Control': 'private, max-age=31536000, immutable',
               'X-Content-Type-Options': 'nosniff',
+              // 附件是同源内容：禁止其中的脚本/插件执行（历史遗留的 svg 也不会变成存储型 XSS）。
+              'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox",
             })
             return method === 'HEAD' ? res.end() : res.end(buf)
           }

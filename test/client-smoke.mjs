@@ -403,6 +403,12 @@ async function main() {
     console.log('DEBUG state:', container.querySelector('.n-save-state')?.textContent)
   }
 
+  // 回归：保存后刷新树不应把 BlockNote 实例重挂载（重挂会丢焦点/撤销栈）。
+  const editorNode = container.querySelector('.bn-editor')
+  ok(editorNode !== null, '保存前编辑器节点存在')
+  await new Promise((resolve) => setTimeout(resolve, 1500))
+  ok(container.querySelector('.bn-editor') === editorNode, '保存后编辑器没有被重挂载')
+
   section('8. Markdown → blocks → BlockNote 渲染（真源往返）')
   const pageA = store.tree().pages.find((row) => row.title === '周会记录')
   ok(pageA !== undefined, '找到刚改名的页面')

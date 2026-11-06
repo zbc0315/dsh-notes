@@ -174,7 +174,7 @@ test('2. savePage：写 .json 真源 + .md 镜像、rev 自增、只改标题不
   // .json 真源：字段顺序固定
   const rawJson = fs.readFileSync(saved.page.path, 'utf8')
   const parsed = JSON.parse(rawJson)
-  assert.deepEqual(Object.keys(parsed), ['id', 'title', 'created', 'updated', 'tags', 'blocks'])
+  assert.deepEqual(Object.keys(parsed), ['id', 'title', 'created', 'updated', 'tags', 'rev', 'blocks'])
   assert.equal(parsed.id, page.id)
   assert.equal(parsed.title, '会议: 周会 第二行')
   assert.match(parsed.created, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
